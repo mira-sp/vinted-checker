@@ -1,0 +1,38 @@
+
+# Dependencies
+node_modules/
+
+# Build output
+dist/
+
+# Environment variables and secrets
+.env
+.env.*
+!.env.example
+
+# Local database
+data/*.db
+data/*.db-*
+data/*.sqlite
+data/*.sqlite-*
+
+# Uploaded images and reference images
+data/uploads/*
+data/reference/*
+
+# Keep folder structure
+!data/uploads/.gitkeep
+!data/reference/.gitkeep
+
+# Logs
+*.log
+npm-debug.log*
+
+# OS and editor files
+.DS_Store
+Thumbs.db
+.vscode/
+.idea/
+
+# Test coverage
+coverage/
