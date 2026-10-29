@@ -1,0 +1,137 @@
+# Vinted Checker
+
+A local app that checks whether a photo, for example from a Vinted listing, comes from a fast-fashion shop such as Shein or Temu. Paste an image into the page and it tells you whether it looks like a known product from those shops.
+
+Everything runs on your own machine. Images are stored locally and the app only listens on `127.0.0.1`. The only outgoing connections are the first-run model download and, if you turn it on, the optional web search.
+
+## How it works
+
+A pasted image is compared in up to three ways:
+
+| Signal | What it finds | Needs |
+| --- | --- | --- |
+| **CLIP embeddings** (main check) | Visually similar products, even from a different photo | Reference images you have saved |
+| **Perceptual hash** | Near-identical copies (resized, recompressed) | Reference images you have saved |
+| **Web search** (optional) | Pages online that contain the image, filtered to fast-fashion shops | A Google Cloud Vision API key |
+
+Matches from all signals are merged, de-duplicated and sorted by similarity.
+
+## Requirements
+
+- Node.js 20 or newer
+- Internet access on the first run, to download the CLIP model (about 90 MB). It is cached afterwards.
+
+## Setup
+
+```bash
+npm install
+npm install @huggingface/transformers   # if not already in package.json
+npm run dev
+```
+
+Then open <http://127.0.0.1:3000> and paste an image with Ctrl+V (Cmd+V on Mac). You can also drop a file onto the page or click it to choose one.
+
+## Project structure
+
+```
+vinted-checker/
+├─ package.json
+├─ tsconfig.json
+├─ public/
+│  └─ index.html          the paste page
+├─ src/
+│  ├─ server.ts           Fastify server and routes
+│  ├─ db.ts               SQLite setup and tables
+│  ├─ matching.ts         combines the matching signals into one result
+│  ├─ embeddings.ts       CLIP model, vector storage and similarity search
+│  ├─ ingest.ts           command to bulk-load reference images
+│  └─ sharp-phash.d.ts    type declarations for sharp-phash
+└─ data/                  created on first run (database and uploads)
+```
+
+## Adding reference images
+
+The app can only recognise what it has been shown. Save product images from the shops you want to detect, put them in a folder per shop, and load them:
+
+```bash
+npm run ingest -- ./refs/shein Shein
+npm run ingest -- ./refs/temu Temu
+```
+
+You can also add a single image through the API:
+
+```bash
+curl -F "file=@dress.jpg" -F "source_name=Shein" -F "source_url=https://..." \
+  http://127.0.0.1:3000/references
+```
+
+Add this script to `package.json` if it is not there yet:
+
+```json
+"ingest": "tsx src/ingest.ts"
+```
+
+## Configuration
+
+Set these as environment variables when starting the app:
+
+| Variable | Default | Purpose |
+| --- | --- | --- |
+| `PORT` | `3000` | Port to listen on |
+| `GOOGLE_VISION_API_KEY` | not set | Turns on the web search. Without it only saved references are checked. |
+| `CLIP_THRESHOLD` | `0.88` | Minimum similarity (0 to 1) for a visual match |
+
+Example:
+
+```bash
+GOOGLE_VISION_API_KEY=your_key CLIP_THRESHOLD=0.9 npm run dev
+```
+
+### Tuning the threshold
+
+The right threshold depends on your reference images. The result page shows the closest saved reference and its score even when it is below the threshold. Paste a few images you know are from a shop and a few that are not, compare the scores, and choose a value between the two groups.
+
+## API
+
+| Method | Path | Description |
+| --- | --- | --- |
+| `GET` | `/` | The paste page |
+| `GET` | `/health` | Health check |
+| `GET` | `/listings` | All checked listings, newest first |
+| `POST` | `/listings` | Upload and save an image without checking it |
+| `POST` | `/check` | Upload an image (multipart field `file`), get a verdict and matches |
+| `POST` | `/references` | Save a known shop image (fields `file`, `source_name`, optional `source_url`) |
+
+Example response from `/check`:
+
+```json
+{
+  "id": 12,
+  "verdict": "likely_fast_fashion",
+  "matches": [
+    { "sourceName": "Shein", "sourceUrl": "https://...", "similarity": 0.93, "method": "clip" }
+  ],
+  "webSearch": "disabled",
+  "closest": { "sourceName": "Shein", "score": 0.93 }
+}
+```
+
+## Scripts
+
+| Script | What it does |
+| --- | --- |
+| `npm run dev` | Start the server in development |
+| `npm run build` | Compile TypeScript |
+| `npm start` | Run the compiled app |
+| `npm run ingest -- <folder> <SourceName>` | Load a folder of reference images |
+
+## Limitations
+
+- **No reference images, no visual match.** The CLIP and hash checks only compare against images you have saved.
+- **A match is a lead, not proof.** Plain basics such as a black ribbed top look alike across many shops, so open the linked source before drawing conclusions.
+- **No match does not mean the photo is original.** The web search only finds images that search engines have indexed.
+- **Scraping shop websites is not included.** Most of these sites block automated access and forbid it in their terms.
+
+## Data
+
+Everything is stored in `data/`: the SQLite database (`data/checker.db`) and the uploaded images (`data/uploads/`). Delete the folder to start fresh.
