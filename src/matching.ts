@@ -10,10 +10,19 @@ export type Match = {
   method: "clip" | "phash" | "web-full" | "web-partial" | "web-page";
 };
 
+export type OnlineFinding = {
+  title: string;
+  url: string | null;
+  type: "page" | "image" | "entity";
+  sourceName: string | null;
+};
+
+
 export type CheckResult = {
   verdict: "likely_fast_fashion" | "no_match_found";
   matches: Match[];
   webSearch: "used" | "disabled" | "failed";
+  onlineFindings: OnlineFinding[];
   /** Best CLIP score against any reference, even below the threshold. Useful for tuning. */
   closest: { sourceName: string; score: number } | null;
 };
@@ -91,63 +100,158 @@ function localMatches(hash: string): Match[] {
   return out;
 }
 
-type VisionImage = { url?: string };
+
+type VisionImage = {
+  url?: string;
+};
+
+type VisionPage = {
+  url?: string;
+  pageTitle?: string;
+};
+
+type VisionEntity = {
+  description?: string;
+  score?: number;
+};
+
 type VisionResponse = {
   responses?: {
     webDetection?: {
       fullMatchingImages?: VisionImage[];
       partialMatchingImages?: VisionImage[];
-      pagesWithMatchingImages?: VisionImage[];
+      pagesWithMatchingImages?: VisionPage[];
+      webEntities?: VisionEntity[];
     };
     error?: { message: string };
   }[];
 };
+
 
 /**
  * Google Cloud Vision "web detection" accepts the image itself (base64),
  * so it works from a local app with no public URL.
  * Set GOOGLE_VISION_API_KEY to enable it.
  */
-async function webMatches(buffer: Buffer): Promise<{ matches: Match[]; status: CheckResult["webSearch"] }> {
+
+async function webMatches(
+  buffer: Buffer
+): Promise<{
+  matches: Match[];
+  findings: OnlineFinding[];
+  status: CheckResult["webSearch"];
+}> {
   const key = process.env.GOOGLE_VISION_API_KEY;
-  if (!key) return { matches: [], status: "disabled" };
+
+  if (!key) {
+    return { matches: [], findings: [], status: "disabled" };
+  }
 
   try {
-    const res = await fetch(`https://vision.googleapis.com/v1/images:annotate?key=${key}`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        requests: [
-          {
-            image: { content: buffer.toString("base64") },
-            features: [{ type: "WEB_DETECTION", maxResults: 50 }],
-          },
-        ],
-      }),
-    });
-    if (!res.ok) return { matches: [], status: "failed" };
+    const res = await fetch(
+      `https://vision.googleapis.com/v1/images:annotate?key=${key}`,
+      {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          requests: [
+            {
+              image: { content: buffer.toString("base64") },
+              features: [{ type: "WEB_DETECTION", maxResults: 50 }],
+            },
+          ],
+        }),
+      }
+    );
+
+    if (!res.ok) {
+      const errorBody = await res.text();
+      console.error("Google Vision HTTP error:", res.status, errorBody);
+      return { matches: [], findings: [], status: "failed" };
+    }
 
     const data = (await res.json()) as VisionResponse;
-    const web = data.responses?.[0]?.webDetection;
-    if (!web) return { matches: [], status: "failed" };
+    const response = data.responses?.[0];
 
-    const groups: [VisionImage[] | undefined, Match["method"], number][] = [
+    if (response?.error) {
+      console.error("Google Vision API error:", response.error);
+      return { matches: [], findings: [], status: "failed" };
+    }
+
+    const web = response?.webDetection;
+
+    if (!web) {
+      console.error("No webDetection returned:", JSON.stringify(data));
+      return { matches: [], findings: [], status: "failed" };
+    }
+
+    const findings: OnlineFinding[] = [
+      ...(web.pagesWithMatchingImages ?? []).map((item) => ({
+        title: item.pageTitle || item.url || "Matching page",
+        url: item.url ?? null,
+        type: "page" as const,
+        sourceName: item.url ? sourceForUrl(item.url) : null,
+      })),
+
+      ...(web.fullMatchingImages ?? []).map((item) => ({
+        title: "Exact matching image",
+        url: item.url ?? null,
+        type: "image" as const,
+        sourceName: item.url ? sourceForUrl(item.url) : null,
+      })),
+
+      ...(web.partialMatchingImages ?? []).map((item) => ({
+        title: "Partially matching image",
+        url: item.url ?? null,
+        type: "image" as const,
+        sourceName: item.url ? sourceForUrl(item.url) : null,
+      })),
+
+      ...(web.webEntities ?? []).map((item) => ({
+        title: item.description || "Unlabeled visual entity",
+        url: null,
+        type: "entity" as const,
+        sourceName: null,
+      })),
+    ];
+
+    const groups: [
+      VisionImage[] | VisionPage[] | undefined,
+      Match["method"],
+      number
+    ][] = [
       [web.fullMatchingImages, "web-full", 0.95],
       [web.partialMatchingImages, "web-partial", 0.75],
       [web.pagesWithMatchingImages, "web-page", 0.7],
     ];
 
     const out: Match[] = [];
+
     for (const [items, method, similarity] of groups) {
       for (const item of items ?? []) {
         if (!item.url) continue;
+
         const name = sourceForUrl(item.url);
-        if (name) out.push({ sourceName: name, sourceUrl: item.url, similarity, method });
+
+        if (name) {
+          out.push({
+            sourceName: name,
+            sourceUrl: item.url,
+            similarity,
+            method,
+          });
+        }
       }
     }
-    return { matches: out, status: "used" };
-  } catch {
-    return { matches: [], status: "failed" };
+
+    return {
+      matches: out,
+      findings: findings.slice(0, 30),
+      status: "used",
+    };
+  } catch (err) {
+    console.error("Google Vision request failed:", err);
+    return { matches: [], findings: [], status: "failed" };
   }
 }
 
@@ -179,6 +283,7 @@ export async function checkImage(buffer: Buffer): Promise<CheckResult> {
     verdict: matches.length ? "likely_fast_fashion" : "no_match_found",
     matches,
     webSearch: web.status,
-    closest: neighbours[0] ? { sourceName: neighbours[0].sourceName, score: neighbours[0].score } : null,
+    onlineFindings: web.findings,
+    closest: neighbours[0] ? { sourceName: neighbours[0].sourceName, score: neighbours[0].score } : null
   };
 }
