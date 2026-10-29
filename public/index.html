@@ -1,3 +1,4 @@
+
 <!doctype html>
 <html lang="en">
 <head>
@@ -41,6 +42,7 @@
   }
   main { max-width: 760px; margin: 0 auto; padding: 40px 20px 64px; }
   h1 { font-size: 1.6rem; margin: 0 0 4px; font-weight: 650; }
+  h2 { font-size: 1.15rem; margin: 24px 0 8px; }
   .sub { color: var(--muted); margin: 0 0 24px; }
   #drop {
     background: var(--surface);
@@ -74,12 +76,41 @@
     gap: 12px;
     align-items: baseline;
     justify-content: space-between;
+    overflow-wrap: anywhere;
   }
   li .src { font-weight: 600; }
   li a { color: var(--teal); word-break: break-all; font-size: .9rem; }
   li .pct { color: var(--muted); white-space: nowrap; font-size: .9rem; }
   .note { color: var(--muted); font-size: .9rem; margin-top: 12px; }
-  @media (prefers-reduced-motion: no-preference) { #drop { transition: border-color .15s; } }
+  .section {
+    margin-top: 24px;
+    padding-top: 4px;
+  }
+  .section-intro { color: var(--muted); font-size: .9rem; margin: 0 0 12px; }
+  .finding {
+    background: var(--surface);
+    border: 1px solid var(--line);
+    border-radius: 8px;
+    padding: 12px 14px;
+    margin: 8px 0;
+    overflow-wrap: anywhere;
+  }
+  .finding-title { font-weight: 600; }
+  .finding-meta { color: var(--muted); font-size: .85rem; margin-top: 4px; }
+  .finding a { color: var(--teal); word-break: break-all; font-size: .9rem; }
+  .tag {
+    display: inline-block;
+    border: 1px solid var(--line);
+    border-radius: 5px;
+    padding: 1px 6px;
+    font-size: .75rem;
+    color: var(--muted);
+    margin-left: 6px;
+    font-weight: 400;
+  }
+  @media (prefers-reduced-motion: no-preference) {
+    #drop { transition: border-color .15s; }
+  }
 </style>
 </head>
 <body>
@@ -88,7 +119,10 @@
   <p class="sub">Is this photo from a fast-fashion shop? Paste an image to find out.</p>
 
   <div id="drop" tabindex="0" role="button" aria-label="Paste, drop or choose an image">
-    <div id="hint"><strong>Paste an image with Ctrl+V (Cmd+V on Mac)</strong><span>or drop a file here, or click to choose one</span></div>
+    <div id="hint">
+      <strong>Paste an image with Ctrl+V (Cmd+V on Mac)</strong>
+      <span>or drop a file here, or click to choose one</span>
+    </div>
   </div>
   <input id="file" type="file" accept="image/*" hidden>
 
@@ -101,17 +135,27 @@ const fileInput = document.getElementById("file");
 const result = document.getElementById("result");
 
 const METHOD = {
-  "clip": "looks like",
-  "phash": "known image",
-  "web-full": "exact copy online",
-  "web-partial": "partial copy online",
-  "web-page": "appears on page",
+  "clip": "Visually similar saved reference",
+  "phash": "Near-identical saved image",
+  "web-full": "Exact image found online",
+  "web-partial": "Partially matching image online",
+  "web-page": "Image appears on this page"
 };
 
 function esc(s) {
   const d = document.createElement("div");
   d.textContent = s ?? "";
   return d.innerHTML;
+}
+
+function safeUrl(value) {
+  try {
+    const url = new URL(value);
+    if (url.protocol === "https:" || url.protocol === "http:") {
+      return url.href;
+    }
+  } catch {}
+  return null;
 }
 
 function preview(file) {
@@ -123,7 +167,7 @@ function preview(file) {
 
 async function check(file) {
   preview(file);
-  result.innerHTML = '<p class="note">Checking…</p>';
+  result.innerHTML = '<p class="note">Checking image and searching online…</p>';
 
   const form = new FormData();
   form.append("file", file, file.name || "pasted.png");
@@ -134,35 +178,82 @@ async function check(file) {
     if (!res.ok) throw new Error(data.error || "Check failed.");
     render(data);
   } catch (err) {
-    result.innerHTML = '<div class="verdict flag">' + esc(err.message) + "</div>";
+    result.innerHTML =
+      '<div class="verdict flag">' + esc(err.message || "Check failed.") + "</div>";
   }
 }
 
 function render(data) {
   const flagged = data.verdict === "likely_fast_fashion";
   let html = flagged
-    ? '<div class="verdict flag">Likely from a fast-fashion shop<small>' + data.matches.length + " match" + (data.matches.length === 1 ? "" : "es") + " found</small></div>"
+    ? '<div class="verdict flag">Likely from a fast-fashion shop<small>' +
+      (data.matches?.length ?? 0) + " match" +
+      (data.matches?.length === 1 ? "" : "es") + " found</small></div>"
     : '<div class="verdict ok">No fast-fashion match found<small>This does not prove the photo is original.</small></div>';
 
-  if (flagged) {
-    html += "<ul>" + data.matches.map(m =>
-      "<li><div><span class=\"src\">" + esc(m.sourceName) + "</span><br>" +
-      (m.sourceUrl ? '<a href="' + esc(m.sourceUrl) + '" target="_blank" rel="noopener noreferrer">' + esc(m.sourceUrl) + "</a>" : "") +
-      "</div><span class=\"pct\">" + esc(METHOD[m.method] || m.method) + " · " + Math.round(m.similarity * 100) + "%</span></li>"
-    ).join("") + "</ul>";
+  if (data.matches?.length) {
+    html += "<h2>Shop matches</h2><ul>" + data.matches.map(m => {
+      const url = safeUrl(m.sourceUrl);
+      return '<li><div><span class="src">' + esc(m.sourceName) + "</span><br>" +
+        (url ? '<a href="' + esc(url) + '" target="_blank" rel="noopener noreferrer">' +
+          esc(url) + "</a>" : "") +
+        "</div><span class=\"pct\">" +
+        esc(METHOD[m.method] || m.method) + " · " +
+        Math.round(m.similarity * 100) + "%</span></li>";
+    }).join("") + "</ul>";
   }
 
   if (data.closest) {
-    html += '<p class="note">Closest saved reference: ' + esc(data.closest.sourceName) + " (similarity " + data.closest.score.toFixed(2) + ").</p>";
+    html += '<p class="note">Closest saved reference: ' +
+      esc(data.closest.sourceName) + " (similarity " +
+      Number(data.closest.score).toFixed(2) + ").</p>";
   } else {
-    html += '<p class="note">No reference images saved yet, so the visual check had nothing to compare against.</p>';
+    html += '<p class="note">No saved reference images were available for the local visual check.</p>';
   }
 
   if (data.webSearch === "disabled") {
-    html += '<p class="note">Online search is off. Set GOOGLE_VISION_API_KEY to also search the web.</p>';
+    html += '<p class="note">Online search is disabled. Configure GOOGLE_VISION_API_KEY on the server to enable it.</p>';
   } else if (data.webSearch === "failed") {
-    html += '<p class="note">The online search failed, so only saved reference images were checked.</p>';
+    html += '<p class="note">Google Vision search failed. Check the server terminal for the API error.</p>';
+  } else {
+    html += '<p class="note">Google Vision Web Detection completed.</p>';
   }
+
+  // Display raw online findings, including results outside the shop allowlist.
+  const findings = Array.isArray(data.onlineFindings) ? data.onlineFindings : [];
+
+  html += '<section class="section">';
+  html += '<h2>Online search results <span class="tag">' + findings.length + '</span></h2>';
+  html += '<p class="section-intro">Pages, images and visual entities returned by Google Vision. A result is not proof of a product’s origin.</p>';
+
+  if (data.webSearch === "failed") {
+    html += '<p class="note">No results can be displayed because the online search failed. Review the server log for details.</p>';
+  } else if (data.webSearch === "disabled") {
+    html += '<p class="note">Enable the Google Vision API search to see online findings here.</p>';
+  } else if (!findings.length) {
+    html += '<p class="note">Google returned no displayable web findings for this image. Try another image or inspect the server logs.</p>';
+  } else {
+    html += findings.map(f => {
+      const url = safeUrl(f.url);
+      const title = f.title || "Untitled result";
+      const type = f.type || "result";
+      const source = f.sourceName
+        ? '<div class="finding-meta">Recognized shop: ' + esc(f.sourceName) + '</div>'
+        : "";
+
+      return '<article class="finding">' +
+        '<div class="finding-title">' + esc(title) +
+        '<span class="tag">' + esc(type) + '</span></div>' +
+        (url
+          ? '<div><a href="' + esc(url) +
+            '" target="_blank" rel="noopener noreferrer">' + esc(url) + '</a></div>'
+          : "") +
+        source +
+        '</article>';
+    }).join("");
+  }
+
+  html += '</section>';
   result.innerHTML = html;
 }
 
@@ -170,17 +261,35 @@ document.addEventListener("paste", (e) => {
   for (const item of e.clipboardData?.items ?? []) {
     if (item.type.startsWith("image/")) {
       const file = item.getAsFile();
-      if (file) { e.preventDefault(); check(file); return; }
+      if (file) {
+        e.preventDefault();
+        check(file);
+        return;
+      }
     }
   }
 });
 
 drop.addEventListener("click", () => fileInput.click());
-drop.addEventListener("keydown", (e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); fileInput.click(); } });
-fileInput.addEventListener("change", () => { if (fileInput.files[0]) check(fileInput.files[0]); });
 
-drop.addEventListener("dragover", (e) => { e.preventDefault(); drop.classList.add("over"); });
+drop.addEventListener("keydown", (e) => {
+  if (e.key === "Enter" || e.key === " ") {
+    e.preventDefault();
+    fileInput.click();
+  }
+});
+
+fileInput.addEventListener("change", () => {
+  if (fileInput.files[0]) check(fileInput.files[0]);
+});
+
+drop.addEventListener("dragover", (e) => {
+  e.preventDefault();
+  drop.classList.add("over");
+});
+
 drop.addEventListener("dragleave", () => drop.classList.remove("over"));
+
 drop.addEventListener("drop", (e) => {
   e.preventDefault();
   drop.classList.remove("over");
