@@ -1,7 +1,3 @@
-.env
-.env.*
-!.env.example
-
 # Dependencies
 node_modules/
 
@@ -39,3 +35,6 @@ Thumbs.db
 
 # Test coverage
 coverage/
+
+# Shop images used as references (copyrighted, keep them local)
+refs/
