@@ -140,6 +140,8 @@ export function webSearchEnabled(): boolean {
   return Boolean(process.env.GOOGLE_VISION_API_KEY);
 }
 
+const VISION_TIMEOUT_MS = 15_000;
+
 /**
  * Google Cloud Vision "web detection" accepts the image itself (base64),
  * so it works from a local app with no public URL.
@@ -155,6 +157,8 @@ async function webMatches(buffer: Buffer, log: FastifyBaseLogger): Promise<WebRe
       method: "POST",
       // Key in a header rather than the URL, so it doesn't end up in proxy or access logs.
       headers: { "Content-Type": "application/json", "X-Goog-Api-Key": key },
+      // Give up rather than leave the check hanging if Google doesn't answer.
+      signal: AbortSignal.timeout(VISION_TIMEOUT_MS),
       body: JSON.stringify({
         requests: [
           {
