@@ -69,13 +69,25 @@ function references(): Ref[] {
 
 export type Neighbour = { sourceName: string; sourceUrl: string | null; score: number };
 
-/** Brute-force cosine search. Fine into the tens of thousands of references. */
-export function nearest(query: Float32Array, k = 5): Neighbour[] {
+export function referenceCount(): number {
+  return references().length;
+}
+
+/**
+ * Brute-force cosine search. Fine into the tens of thousands of references.
+ * Pass several query vectors (e.g. crops of one photo) and each reference is
+ * scored by its best match against any of them.
+ */
+export function nearest(queries: Float32Array[], k = 5): Neighbour[] {
   const scored: Neighbour[] = [];
   for (const r of references()) {
-    let dot = 0;
-    for (let i = 0; i < query.length; i++) dot += (query[i] ?? 0) * (r.vec[i] ?? 0);
-    scored.push({ sourceName: r.sourceName, sourceUrl: r.sourceUrl, score: dot });
+    let best = -Infinity;
+    for (const q of queries) {
+      let dot = 0;
+      for (let i = 0; i < q.length; i++) dot += (q[i] ?? 0) * (r.vec[i] ?? 0);
+      if (dot > best) best = dot;
+    }
+    scored.push({ sourceName: r.sourceName, sourceUrl: r.sourceUrl, score: best });
   }
   return scored.sort((a, b) => b.score - a.score).slice(0, k);
 }
