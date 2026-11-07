@@ -1,0 +1,26 @@
+{
+  "manifest_version": 3,
+  "name": "Vinted Checker",
+  "version": "1.0.0",
+  "description": "Send a Vinted photo to your local Vinted Checker app and see whether it comes from a fast-fashion shop.",
+  "browser_specific_settings": {
+    "gecko": {
+      "id": "vinted-checker@local",
+      "strict_min_version": "142.0",
+      "data_collection_permissions": {
+        "required": ["none"]
+      }
+    }
+  },
+  "background": {
+    "scripts": ["background.js"]
+  },
+  "permissions": ["contextMenus", "activeTab", "scripting", "storage"],
+  "host_permissions": ["https://*.vinted.net/*", "http://127.0.0.1/*", "http://localhost/*"],
+  "action": {
+    "default_title": "Check the main Vinted photo on this page"
+  },
+  "options_ui": {
+    "page": "options.html"
+  }
+}

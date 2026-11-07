@@ -1,0 +1,35 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <title>Vinted Checker settings</title>
+    <style>
+      :root {
+        color-scheme: light dark;
+      }
+      body {
+        font:
+          14px/1.5 system-ui,
+          sans-serif;
+        margin: 16px;
+        min-width: 320px;
+      }
+      input {
+        font: inherit;
+        width: 100%;
+        box-sizing: border-box;
+        padding: 4px 6px;
+        margin-top: 4px;
+      }
+      p {
+        opacity: 0.75;
+      }
+    </style>
+  </head>
+  <body>
+    <label for="server">Address of your Vinted Checker app</label>
+    <input id="server" type="url" placeholder="http://127.0.0.1:3000" />
+    <p id="status">Change this only if you set a different PORT for the app.</p>
+    <script src="options.js"></script>
+  </body>
+</html>

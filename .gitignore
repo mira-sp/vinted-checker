@@ -38,3 +38,6 @@ coverage/
 
 # Shop images used as references (copyrighted, keep them local)
 refs/
+
+# Packaged browser extension
+dist-extension/
