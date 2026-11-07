@@ -26,7 +26,7 @@ The verdict is:
 
 ## Requirements
 
-- Node.js 20 or newer
+- Node.js 22 or newer
 - Internet access on the first run, to download the CLIP model (about 90 MB). It is cached afterwards.
 
 ## Setup
@@ -50,6 +50,7 @@ Settings are read from a `.env` file in the project folder (see `.env.example`).
 | `PORT`                  | `3000`  | Port to listen on                                                      |
 | `GOOGLE_VISION_API_KEY` | not set | Turns on the web search. Without it only saved references are checked. |
 | `CLIP_THRESHOLD`        | `0.88`  | Minimum similarity (0 to 1) for a visual match                         |
+| `DATA_DIR`              | `data`  | Folder for the database and uploads                                    |
 
 ### Tuning the threshold
 
@@ -134,7 +135,7 @@ Example response from `/check`:
 | `npm run build`                           | Compile TypeScript to `dist/`                  |
 | `npm start`                               | Run the compiled app                           |
 | `npm run ingest -- <folder> <SourceName>` | Load a folder of reference images              |
-| `npm test`                                | Run the unit tests                             |
+| `npm test`                                | Run the unit and API tests                     |
 | `npm run typecheck`                       | Check types without building                   |
 | `npm run format`                          | Format all files with Prettier                 |
 | `npm run format:check`                    | Check formatting (for CI or before committing) |
@@ -149,7 +150,9 @@ vinted-pipeline/
 ├─ public/
 │  └─ index.html          the paste page
 ├─ src/
-│  ├─ server.ts           Fastify server and routes
+│  ├─ server.ts           starts the server
+│  ├─ app.ts              Fastify app and routes
+│  ├─ app.test.ts         API tests (temporary data folder, no model download)
 │  ├─ db.ts               SQLite setup and schema migrations
 │  ├─ matching.ts         runs the checks and combines them into one result
 │  ├─ sources.ts          shop domains, match merging and verdict rules (no I/O)
