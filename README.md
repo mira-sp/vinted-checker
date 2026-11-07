@@ -80,6 +80,30 @@ curl -F "file=@dress.jpg" -F "source_name=Shein" -F "source_url=https://..." \
   http://127.0.0.1:3000/references
 ```
 
+## Browser extension (LibreWolf / Firefox)
+
+The `extension/` folder is a browser extension that checks Vinted photos without saving and pasting them.
+
+- **Right-click a photo** on Vinted and choose **Check with Vinted Checker**.
+- **Or click the toolbar button** to check the largest Vinted photo on the page. Use this when Vinted's photo gallery hides the right-click menu.
+
+The extension downloads the photo the same way your browser already did, sends it to the app with the listing's URL and title, and opens the result in a new tab. The toolbar icon shows `!` (likely), `?` (possible), `ok` (no match) or `x` (an error; hover for the message). The app must be running (`npm run dev`).
+
+It only acts when you click, one photo at a time. It doesn't crawl Vinted.
+
+**Install for testing** (removed when the browser restarts):
+
+1. Open `about:debugging#/runtime/this-firefox`.
+2. Click **Load Temporary Add-on…** and choose `extension/manifest.json`.
+
+**Install permanently:**
+
+1. Run `npm run extension:build`. This creates `dist-extension/vinted-checker.xpi`.
+2. In `about:config`, set `xpinstall.signatures.required` to `false`. LibreWolf allows unsigned add-ons; regular Firefox only allows them in Developer Edition and Nightly.
+3. In `about:addons`, open the gear menu, choose **Install Add-on From File…**, and pick `vinted-checker.xpi`.
+
+After installing, open the add-on in `about:addons` and check under **Permissions** that access to `vinted.net` and `127.0.0.1` is turned on. Firefox may leave these off until you allow them. If you changed `PORT`, set the app's address in the add-on's **Options** too.
+
 ## API
 
 | Method | Path                      | Description                                                                                       |
@@ -87,13 +111,14 @@ curl -F "file=@dress.jpg" -F "source_name=Shein" -F "source_url=https://..." \
 | `GET`  | `/`                       | The paste page                                                                                    |
 | `GET`  | `/health`                 | Health check, whether web search is on, and the number of saved references                        |
 | `GET`  | `/listings`               | Checked listings with their matches, newest first. Query: `limit` (max 200), `offset`             |
+| `GET`  | `/listings/:id`           | One listing with its full saved check result. The page shows it at `/?listing=<id>`               |
 | `POST` | `/listings`               | Save an image without checking it (multipart: `file`, optional `url`, `title`, `price`)           |
 | `POST` | `/check`                  | Check an image and save it with its matches (multipart: `file`, optional `url`, `title`, `price`) |
 | `POST` | `/references`             | Save a known shop image (multipart: `file`, `source_name`, optional `source_url`)                 |
 | `POST` | `/listings/:id/reference` | Save a checked listing's image as a reference (JSON: `source_name`, optional `source_url`)        |
 | `GET`  | `/uploads/:name`          | A saved upload, as linked by `imageUrl`                                                           |
 
-Multipart fields can be sent in any order. `POST` requests sent by other websites (any `Origin` other than this app) are rejected, so a page open in your browser can't add references or use up your Vision quota. Requests without an `Origin` header, such as from `curl`, are allowed.
+Multipart fields can be sent in any order. `POST` requests sent by other websites (any `Origin` other than this app) are rejected, so a page open in your browser can't add references or use up your Vision quota. Requests from browser extensions and requests without an `Origin` header, such as from `curl`, are allowed. A website can't pretend to be an extension.
 
 Example response from `/check`:
 
@@ -139,6 +164,8 @@ Example response from `/check`:
 | `npm run typecheck`                       | Check types without building                   |
 | `npm run format`                          | Format all files with Prettier                 |
 | `npm run format:check`                    | Check formatting (for CI or before committing) |
+| `npm run extension:lint`                  | Check the extension with Mozilla's linter      |
+| `npm run extension:build`                 | Package the extension into `dist-extension/`   |
 
 ## Project structure
 
@@ -149,6 +176,7 @@ vinted-pipeline/
 ├─ .env.example           settings template, copy to .env
 ├─ public/
 │  └─ index.html          the paste page
+├─ extension/             LibreWolf/Firefox extension (right-click a Vinted photo to check it)
 ├─ src/
 │  ├─ server.ts           starts the server
 │  ├─ app.ts              Fastify app and routes
