@@ -1,9 +1,12 @@
 import Database from "better-sqlite3";
 import { mkdirSync } from "node:fs";
 
-mkdirSync("data", { recursive: true });
+/** Where the database and uploads live. Tests point this at a temporary folder. */
+export const DATA_DIR = process.env.DATA_DIR || "data";
 
-export const db = new Database("data/checker.db");
+mkdirSync(DATA_DIR, { recursive: true });
+
+export const db = new Database(`${DATA_DIR}/checker.db`);
 
 db.pragma("journal_mode = WAL");
 db.pragma("foreign_keys = ON");
