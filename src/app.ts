@@ -3,7 +3,7 @@ import multipart from "@fastify/multipart";
 import { mkdir, readFile, writeFile } from "node:fs/promises";
 import { randomUUID } from "node:crypto";
 import { DATA_DIR, db, saveReference } from "./db.js";
-import { checkImage, hashImage, normalize, webSearchEnabled, type Match } from "./matching.js";
+import { checkImage, hashImage, normalize, webSearchEnabled, type CheckResult, type Match } from "./matching.js";
 import { embedImage, invalidateReferences, referenceCount, vectorToBlob } from "./embeddings.js";
 
 const UPLOADS_DIR = `${DATA_DIR}/uploads`;
@@ -27,13 +27,15 @@ export async function buildApp({ port, logger = true }: Options) {
   /**
    * The server only listens on 127.0.0.1, but any website open in your browser
    * can still send a form POST to it. Reject writes that come from another origin.
-   * Requests without an Origin header (curl, scripts) are allowed.
+   * Allowed: this app's own page, browser extensions (a website can't send an
+   * extension origin), and requests without an Origin header (curl, scripts).
    */
   const allowedOrigins = new Set([`http://127.0.0.1:${port}`, `http://localhost:${port}`]);
+  const isExtension = (origin: string) => /^(chrome|moz)-extension:\/\/[a-z0-9-]+$/i.test(origin);
   app.addHook("onRequest", async (request, reply) => {
     if (request.method === "GET" || request.method === "HEAD") return;
     const origin = request.headers.origin;
-    if (origin && !allowedOrigins.has(origin)) {
+    if (origin && !allowedOrigins.has(origin) && !isExtension(origin)) {
       return reply.code(403).send({ error: "Requests from other websites are not allowed." });
     }
   });
@@ -68,7 +70,9 @@ export async function buildApp({ port, logger = true }: Options) {
   const matchesFor = db.prepare(
     "SELECT source_name, source_url, similarity, method FROM matches WHERE listing_id = ? ORDER BY id",
   );
-  const insertListing = db.prepare("INSERT INTO listings (url, title, price, image_path) VALUES (?, ?, ?, ?)");
+  const insertListing = db.prepare(
+    "INSERT INTO listings (url, title, price, image_path, result_json) VALUES (?, ?, ?, ?, ?)",
+  );
   const insertMatch = db.prepare(
     "INSERT INTO matches (listing_id, source_name, source_url, similarity, method) VALUES (?, ?, ?, ?, ?)",
   );
@@ -81,7 +85,23 @@ export async function buildApp({ port, logger = true }: Options) {
       total: (countListings.get() as { n: number }).n,
       limit,
       offset,
-      items: rows.map((r) => ({ ...r, matches: matchesFor.all(r.id) })),
+      items: rows.map(({ result_json: _, ...r }) => ({ ...r, matches: matchesFor.all(r.id) })),
+    };
+  });
+
+  /** Upload path on disk → URL the page can load. */
+  const imageUrlFor = (path: string | null) => (path ? `/uploads/${path.split("/").pop()}` : null);
+
+  // One listing with its full check result (null if it was saved without checking).
+  app.get<{ Params: { id: string } }>("/listings/:id", async (request, reply) => {
+    const row = getListing.get(Number(request.params.id)) as ListingRow | undefined;
+    if (!row) return reply.code(404).send({ error: "Listing not found." });
+    const { result_json, ...listing } = row;
+    return {
+      ...listing,
+      imageUrl: imageUrlFor(listing.image_path),
+      matches: matchesFor.all(row.id),
+      result: typeof result_json === "string" ? JSON.parse(result_json) : null,
     };
   });
 
@@ -116,15 +136,22 @@ export async function buildApp({ port, logger = true }: Options) {
     }
   }
 
-  /** Saves the image and an optional url/title/price, plus any matches. Returns the listing id. */
-  async function saveListing(upload: Upload, matches: Match[] = []) {
+  /** Saves the image, optional url/title/price and check result. Returns the listing id. */
+  async function saveListing(upload: Upload, result?: CheckResult) {
     const name = `${randomUUID()}.jpg`;
     const path = `${UPLOADS_DIR}/${name}`;
     await writeFile(path, upload.buffer);
     const { url, title, price } = upload.fields;
+    const matches: Match[] = result?.matches ?? [];
     const id = db.transaction(() => {
       const listingId = Number(
-        insertListing.run(url || null, title || null, price ? Number(price) || null : null, path).lastInsertRowid,
+        insertListing.run(
+          url || null,
+          title || null,
+          price ? Number(price) || null : null,
+          path,
+          result ? JSON.stringify(result) : null,
+        ).lastInsertRowid,
       );
       for (const m of matches) insertMatch.run(listingId, m.sourceName, m.sourceUrl, m.similarity, m.method);
       return listingId;
@@ -144,7 +171,7 @@ export async function buildApp({ port, logger = true }: Options) {
     const upload = await readUpload(request, reply);
     if (!upload) return;
     const result = await checkImage(upload.buffer, request.log);
-    return { ...(await saveListing(upload, result.matches)), ...result };
+    return { ...(await saveListing(upload, result)), ...result };
   });
 
   async function addReference(buffer: Buffer, sourceName: string, sourceUrl: string | null) {

@@ -66,6 +66,11 @@ const migrations: ((db: Database.Database) => void)[] = [
       CREATE UNIQUE INDEX IF NOT EXISTS idx_reference_unique ON reference_images(source_name, phash);
     `);
   },
+
+  // 3: keep the full check result (JSON), so a past check can be shown again.
+  (db) => {
+    db.exec("ALTER TABLE listings ADD COLUMN result_json TEXT");
+  },
 ];
 
 const current = db.pragma("user_version", { simple: true }) as number;

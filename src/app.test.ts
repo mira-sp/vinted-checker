@@ -160,3 +160,50 @@ test("references added by another process are picked up without a restart", asyn
   const afterInsert = (await app.inject({ method: "GET", url: "/health" })).json().references;
   assert.equal(afterInsert, before + 1);
 });
+
+test("POST requests from browser extensions are allowed", async () => {
+  for (const origin of [
+    "moz-extension://3f1c2a9e-7b4d-4c1e-9a2f-0d5e8b6c7a10",
+    "chrome-extension://abcdefghijklmnop",
+  ]) {
+    const body = multipart([{ name: "file", file: png, type: "image/png" }]);
+    const res = await app.inject({
+      method: "POST",
+      url: "/check",
+      payload: body.payload,
+      headers: { ...body.headers, origin },
+    });
+    assert.equal(res.statusCode, 200, origin);
+  }
+  const body = multipart([{ name: "file", file: png, type: "image/png" }]);
+  const fake = await app.inject({
+    method: "POST",
+    url: "/check",
+    payload: body.payload,
+    headers: { ...body.headers, origin: "https://moz-extension.evil.example" },
+  });
+  assert.equal(fake.statusCode, 403);
+});
+
+test("GET /listings/:id returns the saved check result", async () => {
+  const body = multipart([
+    { name: "file", file: png, type: "image/png" },
+    { name: "url", value: "https://www.vinted.de/items/123-top" },
+    { name: "title", value: "Top" },
+  ]);
+  const checked = (await app.inject({ method: "POST", url: "/check", ...body })).json();
+
+  const res = await app.inject({ method: "GET", url: `/listings/${checked.id}` });
+  assert.equal(res.statusCode, 200);
+  const listing = res.json();
+  assert.equal(listing.url, "https://www.vinted.de/items/123-top");
+  assert.equal(listing.imageUrl, checked.imageUrl);
+  assert.equal(listing.result.verdict, checked.verdict);
+  assert.deepEqual(listing.result.matches, checked.matches);
+
+  assert.equal((await app.inject({ method: "GET", url: "/listings/999999" })).statusCode, 404);
+
+  // The list view stays small: no full results in it.
+  const list = (await app.inject({ method: "GET", url: "/listings" })).json();
+  assert.ok(list.items.every((i: Record<string, unknown>) => !("result_json" in i)));
+});
