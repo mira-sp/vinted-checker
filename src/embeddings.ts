@@ -48,17 +48,24 @@ function blobToVector(b: Buffer): Float32Array {
 
 type Ref = { sourceName: string; sourceUrl: string | null; vec: Float32Array };
 let cache: Ref[] | null = null;
+let cachedVersion = -1;
 
-/** Call after inserting a reference so the next search sees it. */
+/** Call after inserting a reference through this process so the next search sees it. */
 export function invalidateReferences(): void {
   cache = null;
 }
 
+const allReferences = db.prepare(
+  "SELECT source_name, source_url, embedding FROM reference_images WHERE embedding IS NOT NULL",
+);
+
 function references(): Ref[] {
-  if (cache) return cache;
-  const rows = db
-    .prepare("SELECT source_name, source_url, embedding FROM reference_images WHERE embedding IS NOT NULL")
-    .all() as { source_name: string; source_url: string | null; embedding: Buffer }[];
+  // data_version changes whenever another connection (e.g. `npm run ingest`
+  // while the server is running) commits a write, so reload in that case too.
+  const version = db.pragma("data_version", { simple: true }) as number;
+  if (cache && version === cachedVersion) return cache;
+  cachedVersion = version;
+  const rows = allReferences.all() as { source_name: string; source_url: string | null; embedding: Buffer }[];
   cache = rows.map((r) => ({
     sourceName: r.source_name,
     sourceUrl: r.source_url,

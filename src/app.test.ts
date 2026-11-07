@@ -145,3 +145,18 @@ test("GET /uploads rejects names that aren't upload ids", async () => {
     assert.equal((await app.inject({ method: "GET", url })).statusCode, 404, url);
   }
 });
+
+test("references added by another process are picked up without a restart", async () => {
+  const before = (await app.inject({ method: "GET", url: "/health" })).json().references;
+
+  // A second connection, like `npm run ingest` running next to the server.
+  const { default: Database } = await import("better-sqlite3");
+  const other = new Database(join(dataDir, "checker.db"));
+  other
+    .prepare("INSERT INTO reference_images (source_name, phash, embedding) VALUES (?, ?, ?)")
+    .run("Shein", "0".repeat(64), Buffer.alloc(512 * 4));
+  other.close();
+
+  const afterInsert = (await app.inject({ method: "GET", url: "/health" })).json().references;
+  assert.equal(afterInsert, before + 1);
+});
