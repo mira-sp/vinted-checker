@@ -291,9 +291,13 @@
       }
 
       function preview(file) {
+        showImage(URL.createObjectURL(file));
+      }
+
+      function showImage(src) {
         const img = document.createElement("img");
         img.alt = "Image being checked";
-        img.src = URL.createObjectURL(file);
+        img.src = src;
         drop.replaceChildren(img);
       }
 
@@ -498,6 +502,41 @@
           verdictHtml(data) + matchesHtml(data.matches) + notesHtml(data) + confirmHtml(data) + findingsHtml(data);
         wireConfirm(data.id);
       }
+
+      function listingHtml(listing) {
+        const url = safeUrl(listing.url);
+        if (!url && !listing.title) return "";
+        return (
+          '<p class="note">Checked from: ' +
+          (url
+            ? '<a href="' +
+              esc(url) +
+              '" target="_blank" rel="noopener noreferrer">' +
+              esc(listing.title || url) +
+              "</a>"
+            : esc(listing.title)) +
+          "</p>"
+        );
+      }
+
+      // Opened as /?listing=<id> (e.g. by the browser extension): show that saved check.
+      async function showSaved(id) {
+        result.innerHTML = '<p class="note">Loading saved check…</p>';
+        try {
+          const res = await fetch("/listings/" + encodeURIComponent(id));
+          const listing = await res.json();
+          if (!res.ok) throw new Error(listing.error || "Could not load this check.");
+          if (listing.imageUrl) showImage(listing.imageUrl);
+          if (!listing.result) throw new Error("This image was saved without being checked.");
+          render({ ...listing.result, id: listing.id });
+          result.insertAdjacentHTML("afterbegin", listingHtml(listing));
+        } catch (err) {
+          result.innerHTML = '<div class="verdict flag">' + esc(err.message || "Could not load this check.") + "</div>";
+        }
+      }
+
+      const savedId = new URLSearchParams(location.search).get("listing");
+      if (savedId) showSaved(savedId);
 
       document.addEventListener("paste", (e) => {
         for (const item of e.clipboardData?.items ?? []) {
