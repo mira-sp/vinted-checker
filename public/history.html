@@ -1,0 +1,165 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Check History</title>
+    <link rel="stylesheet" href="/style.css" />
+    <style>
+      .checks {
+        list-style: none;
+        margin: 0;
+        padding: 0;
+      }
+      .check {
+        display: grid;
+        grid-template-columns: 72px 1fr auto;
+        gap: 12px;
+        align-items: center;
+        background: var(--surface);
+        border: 1px solid var(--line);
+        border-radius: 8px;
+        padding: 8px;
+        margin-bottom: 8px;
+      }
+      .check img,
+      .check .noimg {
+        width: 72px;
+        height: 72px;
+        object-fit: cover;
+        border-radius: 6px;
+        display: block;
+        background: var(--bg);
+      }
+      .check .title {
+        font-weight: 600;
+        overflow-wrap: anywhere;
+        text-decoration: none;
+        color: var(--ink);
+      }
+      .check .title:hover {
+        text-decoration: underline;
+      }
+      .check .meta {
+        color: var(--muted);
+        font-size: 0.85rem;
+        margin-top: 2px;
+      }
+      .check .side {
+        display: flex;
+        flex-direction: column;
+        align-items: flex-end;
+        gap: 6px;
+      }
+      #more {
+        margin-top: 8px;
+      }
+      @media (max-width: 480px) {
+        .check {
+          grid-template-columns: 56px 1fr;
+        }
+        .check img,
+        .check .noimg {
+          width: 56px;
+          height: 56px;
+        }
+        .check .side {
+          grid-column: 1 / -1;
+          flex-direction: row;
+          justify-content: space-between;
+          align-items: center;
+        }
+      }
+    </style>
+  </head>
+  <body>
+    <main>
+      <nav>
+        <a href="/">Check</a>
+        <a href="/history.html" aria-current="page">History</a>
+        <a href="/references.html">References</a>
+      </nav>
+      <h1>History</h1>
+      <p class="sub" id="summary">Earlier checks, newest first.</p>
+      <ul class="checks" id="list"></ul>
+      <p class="note" id="status" role="status"></p>
+      <button id="more" hidden>Show more</button>
+    </main>
+
+    <script type="module">
+      import { esc, safeUrl, api, badgeHtml, formatDate } from "/common.js";
+
+      const PAGE = 30;
+      const list = document.getElementById("list");
+      const status = document.getElementById("status");
+      const more = document.getElementById("more");
+      let offset = 0;
+
+      function rowHtml(l) {
+        const url = safeUrl(l.url);
+        const name = l.title || (url ? new URL(url).pathname : "Pasted photo");
+        const photos = l.image_count > 1 ? " · " + l.image_count + " photos" : "";
+        const top = l.matches?.[0]?.source_name;
+        return (
+          '<li class="check" data-id="' +
+          l.id +
+          '">' +
+          '<a href="/?listing=' +
+          l.id +
+          '" tabindex="-1">' +
+          (l.imageUrl ? '<img alt="" loading="lazy" src="' + esc(l.imageUrl) + '">' : '<div class="noimg"></div>') +
+          "</a><div>" +
+          '<a class="title" href="/?listing=' +
+          l.id +
+          '">' +
+          esc(name) +
+          "</a>" +
+          '<div class="meta">' +
+          esc(formatDate(l.created_at)) +
+          photos +
+          (top ? " · " + esc(top) : "") +
+          (url ? ' · <a href="' + esc(url) + '" target="_blank" rel="noopener noreferrer">listing</a>' : "") +
+          "</div></div>" +
+          '<div class="side">' +
+          badgeHtml(l.verdict) +
+          '<button class="danger" data-delete="' +
+          l.id +
+          '" aria-label="Delete this check">Delete</button></div></li>'
+        );
+      }
+
+      async function load() {
+        more.disabled = true;
+        try {
+          const data = await api("/listings?limit=" + PAGE + "&offset=" + offset);
+          list.insertAdjacentHTML("beforeend", data.items.map(rowHtml).join(""));
+          offset += data.items.length;
+          more.hidden = offset >= data.total;
+          document.getElementById("summary").textContent =
+            data.total + " earlier check" + (data.total === 1 ? "" : "s") + ", newest first.";
+          if (!data.total) status.innerHTML = 'Nothing checked yet. <a href="/">Check a photo</a>.';
+        } catch (err) {
+          status.textContent = err.message;
+        }
+        more.disabled = false;
+      }
+
+      list.addEventListener("click", async (e) => {
+        const id = e.target.closest("[data-delete]")?.dataset.delete;
+        if (!id) return;
+        if (!confirm("Delete this check and its photos? References saved from it are kept.")) return;
+        try {
+          await api("/listings/" + id, { method: "DELETE" });
+          list.querySelector('[data-id="' + id + '"]')?.remove();
+          offset--;
+          status.textContent = "Check deleted.";
+        } catch (err) {
+          status.textContent = err.message;
+        }
+      });
+
+      more.addEventListener("click", load);
+      load();
+    </script>
+  </body>
+</html>

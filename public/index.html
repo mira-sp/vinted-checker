@@ -4,91 +4,29 @@
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <title>Vinted Checker</title>
+    <link rel="stylesheet" href="/style.css" />
     <style>
-      :root {
-        color-scheme: light dark;
-        --bg: #eef1f3;
-        --surface: #ffffff;
-        --ink: #1a2227;
-        --muted: #5c6a73;
-        --line: #cfd7dc;
-        --teal: #00727c;
-        --flag: #b3261e;
-        --flag-bg: #fbe9e7;
-        --ok: #1d6b3a;
-        --ok-bg: #e4f3ea;
-        --maybe: #8a5300;
-        --maybe-bg: #fdf1dc;
-      }
-      @media (prefers-color-scheme: dark) {
-        :root {
-          --bg: #12181b;
-          --surface: #1b2328;
-          --ink: #e7edf0;
-          --muted: #93a3ad;
-          --line: #33414a;
-          --teal: #4cc3cf;
-          --flag: #ff8a80;
-          --flag-bg: #3a1f1d;
-          --ok: #7fd49b;
-          --ok-bg: #173325;
-          --maybe: #f2c26b;
-          --maybe-bg: #3a2c12;
-        }
-      }
-      * {
-        box-sizing: border-box;
-      }
-      body {
-        margin: 0;
-        background: var(--bg);
-        color: var(--ink);
-        font:
-          16px/1.5 "Segoe UI",
-          system-ui,
-          -apple-system,
-          sans-serif;
-      }
-      main {
-        max-width: 760px;
-        margin: 0 auto;
-        padding: 40px 20px 64px;
-      }
-      h1 {
-        font-size: 1.6rem;
-        margin: 0 0 4px;
-        font-weight: 650;
-      }
-      h2 {
-        font-size: 1.15rem;
-        margin: 24px 0 8px;
-      }
-      .sub {
-        color: var(--muted);
-        margin: 0 0 24px;
-      }
       #drop {
         background: var(--surface);
         border: 2px dashed var(--line);
         border-radius: 10px;
-        min-height: 260px;
+        min-height: 220px;
         display: grid;
         place-items: center;
         text-align: center;
         padding: 20px;
         cursor: pointer;
       }
-      #drop:focus-visible {
-        outline: 3px solid var(--teal);
-        outline-offset: 2px;
-      }
       #drop.over {
         border-color: var(--teal);
       }
-      #drop img {
+      #drop > img {
         max-width: 100%;
         max-height: 360px;
         border-radius: 6px;
+      }
+      #drop .thumbs {
+        justify-content: center;
       }
       #hint strong {
         display: block;
@@ -101,22 +39,23 @@
       #result {
         margin-top: 20px;
       }
-      .verdict {
-        border-radius: 10px;
-        padding: 16px 18px;
-        font-weight: 600;
+      .photos {
+        margin-top: 16px;
       }
-      .verdict.flag {
-        background: var(--flag-bg);
-        color: var(--flag);
+      .photos .thumb img {
+        border: 3px solid transparent;
       }
-      .verdict.ok {
-        background: var(--ok-bg);
-        color: var(--ok);
+      .photos .thumb.flag img {
+        border-color: var(--flag);
       }
-      .verdict.maybe {
-        background: var(--maybe-bg);
-        color: var(--maybe);
+      .photos .thumb.maybe img {
+        border-color: var(--maybe);
+      }
+      .photos .thumb.ok img {
+        border-color: var(--ok);
+      }
+      .photos .thumb {
+        background: none;
       }
       .confirm {
         margin-top: 20px;
@@ -128,194 +67,81 @@
         gap: 8px;
         margin-top: 6px;
       }
-      .confirm select,
-      .confirm button {
-        font: inherit;
-        padding: 6px 10px;
-        border-radius: 6px;
-        border: 1px solid var(--line);
-        background: var(--surface);
-        color: var(--ink);
-      }
-      .confirm button {
-        background: var(--teal);
-        border-color: var(--teal);
-        color: var(--surface);
-        cursor: pointer;
-      }
-      .confirm button:disabled {
-        opacity: 0.6;
-        cursor: default;
-      }
-      .verdict small {
-        display: block;
-        font-weight: 400;
-        margin-top: 2px;
-        color: inherit;
-        opacity: 0.85;
-      }
-      ul {
-        list-style: none;
-        margin: 12px 0 0;
-        padding: 0;
-      }
-      li {
-        background: var(--surface);
-        border: 1px solid var(--line);
-        border-radius: 8px;
-        padding: 10px 14px;
-        margin-bottom: 8px;
-        display: flex;
-        gap: 12px;
-        align-items: baseline;
-        justify-content: space-between;
-        overflow-wrap: anywhere;
-      }
-      li .src {
-        font-weight: 600;
-      }
-      li a {
-        color: var(--teal);
-        word-break: break-all;
-        font-size: 0.9rem;
-      }
-      li .pct {
-        color: var(--muted);
-        white-space: nowrap;
-        font-size: 0.9rem;
-      }
-      .note {
-        color: var(--muted);
-        font-size: 0.9rem;
-        margin-top: 12px;
-      }
-      .section {
-        margin-top: 24px;
-        padding-top: 4px;
-      }
-      .section-intro {
-        color: var(--muted);
-        font-size: 0.9rem;
-        margin: 0 0 12px;
-      }
-      .finding {
-        background: var(--surface);
-        border: 1px solid var(--line);
-        border-radius: 8px;
-        padding: 12px 14px;
-        margin: 8px 0;
-        overflow-wrap: anywhere;
-      }
-      .finding-title {
-        font-weight: 600;
-      }
-      .finding-meta {
-        color: var(--muted);
-        font-size: 0.85rem;
-        margin-top: 4px;
-      }
-      .finding a {
-        color: var(--teal);
-        word-break: break-all;
-        font-size: 0.9rem;
-      }
-      .tag {
-        display: inline-block;
-        border: 1px solid var(--line);
-        border-radius: 5px;
-        padding: 1px 6px;
-        font-size: 0.75rem;
-        color: var(--muted);
-        margin-left: 6px;
-        font-weight: 400;
-      }
-      @media (prefers-reduced-motion: no-preference) {
-        #drop {
-          transition: border-color 0.15s;
-        }
-      }
     </style>
   </head>
   <body>
     <main>
+      <nav>
+        <a href="/" aria-current="page">Check</a>
+        <a href="/history.html">History</a>
+        <a href="/references.html">References</a>
+      </nav>
       <h1>Vinted Checker</h1>
-      <p class="sub">Is this photo from a fast-fashion shop? Paste an image to find out.</p>
+      <p class="sub">Is this from a fast-fashion shop? Add one or more photos of a listing to find out.</p>
 
-      <div id="drop" tabindex="0" role="button" aria-label="Paste, drop or choose an image">
+      <div id="warning"></div>
+      <div id="drop" tabindex="0" role="button" aria-label="Paste, drop or choose photos">
         <div id="hint">
-          <strong>Paste an image with Ctrl+V (Cmd+V on Mac)</strong>
-          <span>or drop a file here, or click to choose one</span>
+          <strong>Paste a photo with Ctrl+V (Cmd+V on Mac)</strong>
+          <span>or drop up to 8 photos of one listing here, or click to choose them</span>
         </div>
       </div>
-      <input id="file" type="file" accept="image/*" hidden />
+      <input id="file" type="file" accept="image/*" multiple hidden />
 
       <div id="result" aria-live="polite"></div>
     </main>
 
-    <script>
+    <script type="module">
+      import { SHOPS, METHOD, esc, safeUrl, api, embeddingWarning } from "/common.js";
+
+      const MAX_PHOTOS = 8;
       const drop = document.getElementById("drop");
       const fileInput = document.getElementById("file");
       const result = document.getElementById("result");
 
-      const METHOD = {
-        clip: "Visually similar saved reference",
-        phash: "Near-identical saved image",
-        "web-full": "Exact image found online",
-        "web-partial": "Partially matching image online",
-        "web-page": "Image appears on this page",
-      };
-      const WEB_METHODS = new Set(["web-full", "web-partial", "web-page"]);
-      const SHOPS = ["Shein", "Temu", "AliExpress", "Zaful", "Cider", "DHgate", "Wish"];
-
       // Ask the server once whether online search is configured, so the loading text is accurate.
       let webSearch = false;
-      fetch("/health")
-        .then((r) => r.json())
-        .then((h) => {
-          webSearch = Boolean(h.webSearch);
-        })
+      api("/health")
+        .then((h) => (webSearch = Boolean(h.webSearch)))
         .catch(() => {});
+      embeddingWarning().then((html) => (document.getElementById("warning").innerHTML = html));
 
-      function esc(s) {
-        const d = document.createElement("div");
-        d.textContent = s ?? "";
-        return d.innerHTML;
+      function showImages(srcs) {
+        if (srcs.length === 1) {
+          const img = document.createElement("img");
+          img.alt = "Photo being checked";
+          img.src = srcs[0];
+          drop.replaceChildren(img);
+        } else {
+          drop.innerHTML =
+            '<div class="thumbs">' +
+            srcs
+              .map((s, i) => '<div class="thumb"><img alt="Photo ' + (i + 1) + '" src="' + esc(s) + '"></div>')
+              .join("") +
+            "</div>";
+        }
       }
 
-      function safeUrl(value) {
-        try {
-          const url = new URL(value);
-          if (url.protocol === "https:" || url.protocol === "http:") return url.href;
-        } catch {}
-        return null;
-      }
-
-      function preview(file) {
-        showImage(URL.createObjectURL(file));
-      }
-
-      function showImage(src) {
-        const img = document.createElement("img");
-        img.alt = "Image being checked";
-        img.src = src;
-        drop.replaceChildren(img);
-      }
-
-      async function check(file) {
-        preview(file);
+      async function check(files) {
+        if (files.length > MAX_PHOTOS) {
+          result.innerHTML =
+            '<div class="verdict flag">Please add at most ' + MAX_PHOTOS + " photos of one listing at once.</div>";
+          return;
+        }
+        showImages(files.map((f) => URL.createObjectURL(f)));
+        const what = files.length > 1 ? files.length + " photos" : "photo";
         result.innerHTML =
           '<p class="note">' +
-          (webSearch ? "Checking image and searching online…" : "Checking image against saved references…") +
+          (webSearch
+            ? "Checking " + what + " and searching online…"
+            : "Checking " + what + " against saved references…") +
           "</p>";
 
         const form = new FormData();
-        form.append("file", file, file.name || "pasted.png");
-
+        for (const f of files) form.append("file", f, f.name || "pasted.png");
         try {
-          const res = await fetch("/check", { method: "POST", body: form });
-          const data = await res.json();
-          if (!res.ok) throw new Error(data.error || "Check failed.");
-          render(data);
+          render(await api("/check", { method: "POST", body: form }));
+          history.replaceState(null, "", location.pathname);
         } catch (err) {
           result.innerHTML = '<div class="verdict flag">' + esc(err.message || "Check failed.") + "</div>";
         }
@@ -323,7 +149,8 @@
 
       function verdictHtml(data) {
         const n = data.matches?.length ?? 0;
-        const count = n + " match" + (n === 1 ? "" : "es") + " found";
+        const photos = data.images?.length > 1 ? " across " + data.images.length + " photos" : "";
+        const count = n + " match" + (n === 1 ? "" : "es") + " found" + photos;
         if (data.verdict === "likely_fast_fashion") {
           return '<div class="verdict flag">Likely from a fast-fashion shop<small>' + count + "</small></div>";
         }
@@ -337,15 +164,44 @@
         return '<div class="verdict ok">No fast-fashion match found<small>This does not prove the photo is original.</small></div>';
       }
 
-      function matchesHtml(matches) {
-        if (!matches?.length) return "";
+      // One thumbnail per photo, outlined by that photo's own verdict.
+      function photosHtml(data) {
+        if (!(data.images?.length > 1) || !data.imageUrls) return "";
+        const cls = { likely_fast_fashion: "flag", possible_fast_fashion: "maybe", no_match_found: "ok" };
         return (
-          "<h2>Shop matches</h2><ul>" +
-          matches
+          '<div class="photos thumbs">' +
+          data.images
+            .map((img) => {
+              const score = img.closest ? img.closest.score.toFixed(2) + " " + esc(img.closest.sourceName) : "";
+              return (
+                '<div class="thumb ' +
+                (cls[img.verdict] || "") +
+                '"><img alt="Photo ' +
+                (img.index + 1) +
+                '" src="' +
+                esc(data.imageUrls[img.index]) +
+                '"><div class="caption">Photo ' +
+                (img.index + 1) +
+                (score ? " · " + score : "") +
+                "</div></div>"
+              );
+            })
+            .join("") +
+          "</div>"
+        );
+      }
+
+      function matchesHtml(data) {
+        if (!data.matches?.length) return "";
+        const several = data.images?.length > 1;
+        return (
+          '<h2>Shop matches</h2><ul class="matches">' +
+          data.matches
             .map((m) => {
               const url = safeUrl(m.sourceUrl);
               // Only local checks have a real score; web results only say what kind of match it was.
               const score = typeof m.similarity === "number" ? " · " + Math.round(m.similarity * 100) + "%" : "";
+              const photo = several && m.image !== undefined ? " · photo " + (m.image + 1) : "";
               return (
                 '<li><div><span class="src">' +
                 esc(m.sourceName) +
@@ -356,6 +212,7 @@
                 '</div><span class="pct">' +
                 esc(METHOD[m.method] || m.method) +
                 score +
+                photo +
                 "</span></li>"
               );
             })
@@ -369,13 +226,18 @@
         const options = SHOPS.map(
           (s) => "<option" + (s === suggested ? " selected" : "") + ">" + esc(s) + "</option>",
         ).join("");
+        const n = data.imageUrls?.length ?? 1;
+        const what = n > 1 ? "these " + n + " photos" : "this photo";
         return (
           '<form class="confirm" id="confirm">' +
-          '<label for="confirm-shop">Know where this is from? Save it as a reference so future checks recognise it:</label>' +
+          '<label for="confirm-shop">Know where this is from? Save ' +
+          what +
+          " as references so future checks recognise the item:</label>" +
           '<div class="confirm-row"><select id="confirm-shop">' +
           options +
-          "</select>" +
-          '<button type="submit">Save as reference</button></div>' +
+          '<option value="">Other shop…</option></select>' +
+          '<input id="confirm-other" type="text" placeholder="Shop name" hidden>' +
+          '<button type="submit" class="primary">Save as reference</button></div>' +
           '<p class="note" id="confirm-status" role="status"></p></form>'
         );
       }
@@ -383,25 +245,29 @@
       function wireConfirm(listingId) {
         const form = document.getElementById("confirm");
         if (!form) return;
+        const select = document.getElementById("confirm-shop");
+        const other = document.getElementById("confirm-other");
+        select.addEventListener("change", () => {
+          other.hidden = select.value !== "";
+          if (!other.hidden) other.focus();
+        });
         form.addEventListener("submit", async (e) => {
           e.preventDefault();
           const status = document.getElementById("confirm-status");
           const button = form.querySelector("button");
-          const shop = document.getElementById("confirm-shop").value;
+          const shop = (select.value || other.value).trim();
+          if (!shop) {
+            status.textContent = "Enter the shop name.";
+            return;
+          }
           button.disabled = true;
           status.textContent = "Saving…";
           try {
-            const res = await fetch("/listings/" + listingId + "/reference", {
-              method: "POST",
-              headers: { "Content-Type": "application/json" },
-              body: JSON.stringify({ source_name: shop }),
-            });
-            const data = await res.json();
-            if (!res.ok) throw new Error(data.error || "Saving failed.");
-            status.textContent =
-              data.status === "already_saved"
-                ? "This image is already saved as a " + shop + " reference."
-                : "Saved as a " + shop + " reference.";
+            const data = await api("/listings/" + listingId + "/reference", { json: { source_name: shop } });
+            const parts = [];
+            if (data.saved) parts.push("Saved " + data.saved + " photo" + (data.saved === 1 ? "" : "s"));
+            if (data.alreadySaved) parts.push(data.alreadySaved + " already saved");
+            status.textContent = parts.join(", ") + " as " + shop + " reference" + (data.saved === 1 ? "" : "s") + ".";
           } catch (err) {
             status.textContent = err.message || "Saving failed.";
             button.disabled = false;
@@ -411,6 +277,7 @@
 
       function notesHtml(data) {
         let html = "";
+        const WEB = new Set(["web-full", "web-partial", "web-page"]);
 
         if (data.web) {
           const total = data.web.pages + data.web.images;
@@ -420,7 +287,7 @@
             " matching pages and " +
             data.web.images +
             " matching images returned.</p>";
-          if (total > 0 && !data.matches?.some((m) => WEB_METHODS.has(m.method))) {
+          if (total > 0 && !data.matches?.some((m) => WEB.has(m.method))) {
             html += '<p class="note">No returned image or page matched a known shop domain.</p>';
           }
           if (data.web.entities?.length) {
@@ -431,24 +298,30 @@
           }
         }
 
+        const model = data.model ? " (" + esc(data.model) + ")" : "";
         if (data.clip === "failed") {
-          html +=
-            '<p class="note">The local visual check could not run (the CLIP model failed to load). See the server log.</p>';
+          html += '<p class="note">The visual check could not run (the model failed to load). See the server log.</p>';
         } else if (data.clip === "no_references" || !data.closest) {
-          html += '<p class="note">No saved reference images yet, so the local visual check was skipped.</p>';
+          html += '<p class="note">No saved reference images yet, so the visual check was skipped.</p>';
         } else {
+          const photo = data.images?.length > 1 ? ", photo " + (data.closest.image + 1) : "";
           html +=
-            '<p class="note">Closest saved reference: ' +
+            '<p class="note">Closest saved reference' +
+            model +
+            ": " +
             esc(data.closest.sourceName) +
             " (similarity " +
             Number(data.closest.score).toFixed(2) +
+            photo +
             ").</p>";
         }
 
         if (data.webSearch === "disabled") {
-          html += '<p class="note">Online search is disabled. Set GOOGLE_VISION_API_KEY in .env to enable it.</p>';
+          html += '<p class="note">Online search is off. Set GOOGLE_VISION_API_KEY in .env to turn it on.</p>';
         } else if (data.webSearch === "failed") {
           html += '<p class="note">Google Vision search failed. Check the server terminal for the API error.</p>';
+        } else if (data.webSearch === "cached") {
+          html += '<p class="note">Online results reused from an earlier check of the same photo (no new request).</p>';
         }
         return html;
       }
@@ -456,10 +329,8 @@
       function findingsHtml(data) {
         if (data.webSearch === "disabled") return "";
         const findings = Array.isArray(data.onlineFindings) ? data.onlineFindings : [];
-
         let html =
-          '<section class="section">' +
-          '<h2>Online search results <span class="tag">' +
+          '<section><h2>Online search results <span class="tag">' +
           findings.length +
           "</span></h2>" +
           '<p class="section-intro">Pages, images and visual entities returned by Google Vision. A result is not proof of a product’s origin.</p>';
@@ -467,7 +338,7 @@
         if (data.webSearch === "failed") {
           html += '<p class="note">No results can be displayed because the online search failed.</p>';
         } else if (!findings.length) {
-          html += '<p class="note">Google returned no web findings for this image.</p>';
+          html += '<p class="note">Google returned no web findings for this photo.</p>';
         } else {
           html += findings
             .map((f) => {
@@ -499,7 +370,12 @@
 
       function render(data) {
         result.innerHTML =
-          verdictHtml(data) + matchesHtml(data.matches) + notesHtml(data) + confirmHtml(data) + findingsHtml(data);
+          verdictHtml(data) +
+          photosHtml(data) +
+          matchesHtml(data) +
+          notesHtml(data) +
+          confirmHtml(data) +
+          findingsHtml(data);
         wireConfirm(data.id);
       }
 
@@ -519,16 +395,14 @@
         );
       }
 
-      // Opened as /?listing=<id> (e.g. by the browser extension): show that saved check.
+      // Opened as /?listing=<id> (from History or the browser extension): show that saved check.
       async function showSaved(id) {
         result.innerHTML = '<p class="note">Loading saved check…</p>';
         try {
-          const res = await fetch("/listings/" + encodeURIComponent(id));
-          const listing = await res.json();
-          if (!res.ok) throw new Error(listing.error || "Could not load this check.");
-          if (listing.imageUrl) showImage(listing.imageUrl);
-          if (!listing.result) throw new Error("This image was saved without being checked.");
-          render({ ...listing.result, id: listing.id });
+          const listing = await api("/listings/" + encodeURIComponent(id));
+          if (listing.imageUrls?.length) showImages(listing.imageUrls);
+          if (!listing.result) throw new Error("These photos were saved without being checked.");
+          render({ ...listing.result, id: listing.id, imageUrls: listing.imageUrls });
           result.insertAdjacentHTML("afterbegin", listingHtml(listing));
         } catch (err) {
           result.innerHTML = '<div class="verdict flag">' + esc(err.message || "Could not load this check.") + "</div>";
@@ -538,44 +412,41 @@
       const savedId = new URLSearchParams(location.search).get("listing");
       if (savedId) showSaved(savedId);
 
+      const images = (files) => [...(files ?? [])].filter((f) => f.type.startsWith("image/"));
+
       document.addEventListener("paste", (e) => {
-        for (const item of e.clipboardData?.items ?? []) {
-          if (item.type.startsWith("image/")) {
-            const file = item.getAsFile();
-            if (file) {
-              e.preventDefault();
-              check(file);
-              return;
-            }
-          }
+        const files = [...(e.clipboardData?.items ?? [])]
+          .filter((item) => item.type.startsWith("image/"))
+          .map((item) => item.getAsFile())
+          .filter(Boolean);
+        if (files.length) {
+          e.preventDefault();
+          check(files);
         }
       });
 
       drop.addEventListener("click", () => fileInput.click());
-
       drop.addEventListener("keydown", (e) => {
         if (e.key === "Enter" || e.key === " ") {
           e.preventDefault();
           fileInput.click();
         }
       });
-
       fileInput.addEventListener("change", () => {
-        if (fileInput.files[0]) check(fileInput.files[0]);
+        const files = images(fileInput.files);
+        if (files.length) check(files);
+        fileInput.value = "";
       });
-
       drop.addEventListener("dragover", (e) => {
         e.preventDefault();
         drop.classList.add("over");
       });
-
       drop.addEventListener("dragleave", () => drop.classList.remove("over"));
-
       drop.addEventListener("drop", (e) => {
         e.preventDefault();
         drop.classList.remove("over");
-        const file = [...(e.dataTransfer?.files ?? [])].find((f) => f.type.startsWith("image/"));
-        if (file) check(file);
+        const files = images(e.dataTransfer?.files);
+        if (files.length) check(files);
       });
     </script>
   </body>

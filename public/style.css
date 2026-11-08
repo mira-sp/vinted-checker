@@ -1,0 +1,264 @@
+:root {
+  color-scheme: light dark;
+  --bg: #eef1f3;
+  --surface: #ffffff;
+  --ink: #1a2227;
+  --muted: #5c6a73;
+  --line: #cfd7dc;
+  --teal: #00727c;
+  --on-teal: #ffffff;
+  --flag: #b3261e;
+  --flag-bg: #fbe9e7;
+  --ok: #1d6b3a;
+  --ok-bg: #e4f3ea;
+  --maybe: #8a5300;
+  --maybe-bg: #fdf1dc;
+}
+@media (prefers-color-scheme: dark) {
+  :root {
+    --bg: #12181b;
+    --surface: #1b2328;
+    --ink: #e7edf0;
+    --muted: #93a3ad;
+    --line: #33414a;
+    --teal: #4cc3cf;
+    --on-teal: #0d1417;
+    --flag: #ff8a80;
+    --flag-bg: #3a1f1d;
+    --ok: #7fd49b;
+    --ok-bg: #173325;
+    --maybe: #f2c26b;
+    --maybe-bg: #3a2c12;
+  }
+}
+* {
+  box-sizing: border-box;
+}
+body {
+  margin: 0;
+  background: var(--bg);
+  color: var(--ink);
+  font:
+    16px/1.5 "Segoe UI",
+    system-ui,
+    -apple-system,
+    sans-serif;
+}
+main {
+  max-width: 860px;
+  margin: 0 auto;
+  padding: 24px 16px 64px;
+}
+h1 {
+  font-size: 1.6rem;
+  margin: 0 0 4px;
+  font-weight: 650;
+}
+h2 {
+  font-size: 1.15rem;
+  margin: 24px 0 8px;
+}
+a {
+  color: var(--teal);
+}
+.sub {
+  color: var(--muted);
+  margin: 0 0 24px;
+}
+.note {
+  color: var(--muted);
+  font-size: 0.9rem;
+  margin-top: 12px;
+}
+
+/* Navigation */
+nav {
+  display: flex;
+  gap: 4px;
+  margin-bottom: 24px;
+  border-bottom: 1px solid var(--line);
+}
+nav a {
+  padding: 8px 12px;
+  text-decoration: none;
+  color: var(--muted);
+  border-bottom: 2px solid transparent;
+  margin-bottom: -1px;
+}
+nav a[aria-current="page"] {
+  color: var(--ink);
+  border-bottom-color: var(--teal);
+  font-weight: 600;
+}
+
+/* Buttons and form controls */
+button,
+select,
+input[type="text"],
+input[type="url"] {
+  font: inherit;
+  font-size: 0.9rem;
+  padding: 6px 10px;
+  border-radius: 6px;
+  border: 1px solid var(--line);
+  background: var(--surface);
+  color: var(--ink);
+}
+button {
+  cursor: pointer;
+}
+button.primary {
+  background: var(--teal);
+  border-color: var(--teal);
+  color: var(--on-teal);
+}
+button.danger {
+  color: var(--flag);
+}
+button:disabled {
+  opacity: 0.6;
+  cursor: default;
+}
+:focus-visible {
+  outline: 3px solid var(--teal);
+  outline-offset: 2px;
+}
+
+/* Verdicts and badges */
+.verdict {
+  border-radius: 10px;
+  padding: 16px 18px;
+  font-weight: 600;
+}
+.verdict small {
+  display: block;
+  font-weight: 400;
+  margin-top: 2px;
+  opacity: 0.85;
+}
+.flag {
+  background: var(--flag-bg);
+  color: var(--flag);
+}
+.ok {
+  background: var(--ok-bg);
+  color: var(--ok);
+}
+.maybe {
+  background: var(--maybe-bg);
+  color: var(--maybe);
+}
+.badge {
+  display: inline-block;
+  border-radius: 5px;
+  padding: 1px 8px;
+  font-size: 0.8rem;
+  font-weight: 600;
+  white-space: nowrap;
+}
+.badge.none {
+  background: var(--bg);
+  color: var(--muted);
+}
+.tag {
+  display: inline-block;
+  border: 1px solid var(--line);
+  border-radius: 5px;
+  padding: 1px 6px;
+  font-size: 0.75rem;
+  color: var(--muted);
+  margin-left: 6px;
+  font-weight: 400;
+}
+
+/* Lists of matches and findings */
+ul.matches {
+  list-style: none;
+  margin: 12px 0 0;
+  padding: 0;
+}
+ul.matches li {
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  padding: 10px 14px;
+  margin-bottom: 8px;
+  display: flex;
+  gap: 12px;
+  align-items: baseline;
+  justify-content: space-between;
+  overflow-wrap: anywhere;
+}
+ul.matches .src {
+  font-weight: 600;
+}
+ul.matches a,
+.finding a {
+  word-break: break-all;
+  font-size: 0.9rem;
+}
+ul.matches .pct {
+  color: var(--muted);
+  white-space: nowrap;
+  font-size: 0.9rem;
+}
+.finding {
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  padding: 12px 14px;
+  margin: 8px 0;
+  overflow-wrap: anywhere;
+}
+.finding-title {
+  font-weight: 600;
+}
+.finding-meta {
+  color: var(--muted);
+  font-size: 0.85rem;
+  margin-top: 4px;
+}
+.section-intro {
+  color: var(--muted);
+  font-size: 0.9rem;
+  margin: 0 0 12px;
+}
+
+/* Banners */
+.banner {
+  border-radius: 8px;
+  padding: 10px 14px;
+  margin-bottom: 16px;
+  font-size: 0.9rem;
+}
+
+/* Photo thumbnails */
+.thumbs {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+.thumb {
+  position: relative;
+  width: 104px;
+}
+.thumb img {
+  width: 104px;
+  height: 104px;
+  object-fit: cover;
+  border-radius: 6px;
+  display: block;
+  background: var(--surface);
+}
+.thumb .caption {
+  font-size: 0.75rem;
+  color: var(--muted);
+  margin-top: 2px;
+  text-align: center;
+}
+
+@media (prefers-reduced-motion: no-preference) {
+  #drop {
+    transition: border-color 0.15s;
+  }
+}

@@ -1,0 +1,294 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Saved References</title>
+    <link rel="stylesheet" href="/style.css" />
+    <style>
+      .shops {
+        display: grid;
+        gap: 6px;
+        margin-bottom: 20px;
+      }
+      .shop {
+        display: grid;
+        grid-template-columns: 110px 1fr 40px;
+        gap: 10px;
+        align-items: center;
+        font: inherit;
+        font-size: 0.9rem;
+        text-align: left;
+        background: none;
+        border: 1px solid transparent;
+        border-radius: 6px;
+        padding: 4px 8px;
+        cursor: pointer;
+        color: var(--ink);
+      }
+      .shop[aria-pressed="true"] {
+        border-color: var(--teal);
+        background: var(--surface);
+      }
+      .shop .bar {
+        height: 10px;
+        border-radius: 3px;
+        background: var(--teal);
+        min-width: 3px;
+      }
+      .shop .n {
+        color: var(--muted);
+        text-align: right;
+        font-variant-numeric: tabular-nums;
+      }
+      .add {
+        background: var(--surface);
+        border: 1px solid var(--line);
+        border-radius: 8px;
+        padding: 12px 14px;
+        margin-bottom: 20px;
+        display: flex;
+        flex-wrap: wrap;
+        gap: 8px;
+        align-items: center;
+        font-size: 0.9rem;
+      }
+      .grid {
+        display: grid;
+        grid-template-columns: repeat(auto-fill, minmax(150px, 1fr));
+        gap: 12px;
+      }
+      .card {
+        background: var(--surface);
+        border: 1px solid var(--line);
+        border-radius: 8px;
+        overflow: hidden;
+        display: flex;
+        flex-direction: column;
+      }
+      .card img,
+      .card .noimg {
+        width: 100%;
+        aspect-ratio: 1;
+        object-fit: cover;
+        display: block;
+        background: var(--bg);
+      }
+      .card .noimg {
+        display: grid;
+        place-items: center;
+        color: var(--muted);
+        font-size: 0.8rem;
+        padding: 8px;
+        text-align: center;
+      }
+      .card .body {
+        padding: 8px;
+        display: grid;
+        gap: 6px;
+      }
+      .card select,
+      .card input {
+        width: 100%;
+        font-size: 0.8rem;
+        padding: 4px 6px;
+      }
+      .card .row {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        gap: 6px;
+        font-size: 0.75rem;
+        color: var(--muted);
+      }
+      .card button {
+        font-size: 0.8rem;
+        padding: 2px 8px;
+      }
+    </style>
+  </head>
+  <body>
+    <main>
+      <nav>
+        <a href="/">Check</a>
+        <a href="/history.html">History</a>
+        <a href="/references.html" aria-current="page">References</a>
+      </nav>
+      <h1>References</h1>
+      <p class="sub">
+        Photos known to come from a shop. A check only recognises items saved here, so shops with few photos are rarely
+        matched.
+      </p>
+      <div id="warning"></div>
+
+      <div class="shops" id="shops" role="group" aria-label="Filter by shop"></div>
+
+      <form class="add" id="add">
+        <label for="add-files">Add photos for</label>
+        <select id="add-shop"></select>
+        <input id="add-other" type="text" placeholder="Shop name" hidden />
+        <input id="add-files" type="file" accept="image/*" multiple />
+        <button type="submit" class="primary">Add</button>
+      </form>
+
+      <p class="note" id="status" role="status"></p>
+      <div class="grid" id="grid"></div>
+    </main>
+
+    <script type="module">
+      import { SHOPS, esc, api, formatDate, embeddingWarning } from "/common.js";
+
+      const grid = document.getElementById("grid");
+      const shopsEl = document.getElementById("shops");
+      const status = document.getElementById("status");
+      let filter = null;
+      let knownShops = [...SHOPS];
+
+      embeddingWarning().then((html) => (document.getElementById("warning").innerHTML = html));
+
+      function shopOptions(selected) {
+        const names = [...new Set([...knownShops, selected].filter(Boolean))];
+        return names.map((s) => "<option" + (s === selected ? " selected" : "") + ">" + esc(s) + "</option>").join("");
+      }
+
+      function renderShops(shops, total) {
+        const max = Math.max(1, ...shops.map((s) => s.count));
+        const row = (name, count, label) =>
+          '<button type="button" class="shop" data-shop="' +
+          esc(name ?? "") +
+          '" aria-pressed="' +
+          (filter === name) +
+          '"><span>' +
+          esc(label) +
+          '</span><span class="bar" style="width:' +
+          (name === null ? 100 : Math.round((count / max) * 100)) +
+          '%"></span><span class="n">' +
+          count +
+          "</span></button>";
+        shopsEl.innerHTML = row(null, total, "All shops") + shops.map((s) => row(s.name, s.count, s.name)).join("");
+      }
+
+      function cardHtml(r) {
+        return (
+          '<div class="card" data-id="' +
+          r.id +
+          '">' +
+          (r.imageUrl
+            ? '<img alt="' + esc(r.sourceName) + ' reference" loading="lazy" src="' + esc(r.imageUrl) + '">'
+            : '<div class="noimg">No stored photo. Run npm run reembed, or delete it.</div>') +
+          '<div class="body"><select data-field="source_name" aria-label="Shop">' +
+          shopOptions(r.sourceName) +
+          "</select>" +
+          '<input type="url" data-field="source_url" placeholder="Product link (optional)" value="' +
+          esc(r.sourceUrl ?? "") +
+          '" aria-label="Product link">' +
+          '<div class="row"><span title="' +
+          esc(r.models.join(", ") || "no embedding") +
+          '">' +
+          esc(formatDate(r.createdAt)) +
+          '</span><button class="danger" data-delete aria-label="Delete reference">Delete</button></div></div></div>'
+        );
+      }
+
+      async function load() {
+        try {
+          const all = await api("/references");
+          knownShops = [...new Set([...SHOPS, ...all.shops.map((s) => s.name)])];
+          renderShops(all.shops, all.items.length);
+          const items = filter ? all.items.filter((r) => r.sourceName === filter) : all.items;
+          grid.innerHTML = items.map(cardHtml).join("");
+          document.getElementById("add-shop").innerHTML =
+            shopOptions(filter ?? SHOPS[0]) + '<option value="">Other shop…</option>';
+          if (!all.items.length)
+            status.textContent = "No references yet. Add photos above, or save them after a check.";
+        } catch (err) {
+          status.textContent = err.message;
+        }
+      }
+
+      shopsEl.addEventListener("click", (e) => {
+        const btn = e.target.closest("[data-shop]");
+        if (!btn) return;
+        filter = btn.dataset.shop || null;
+        status.textContent = "";
+        load();
+      });
+
+      // Edit shop or link: saved as soon as the field changes.
+      grid.addEventListener("change", async (e) => {
+        const field = e.target.dataset.field;
+        if (!field) return;
+        const id = e.target.closest("[data-id]").dataset.id;
+        try {
+          await api("/references/" + id, { method: "PATCH", json: { [field]: e.target.value } });
+          status.textContent = field === "source_name" ? "Moved to " + e.target.value + "." : "Link saved.";
+          if (field === "source_name") load();
+        } catch (err) {
+          status.textContent = err.message;
+          load();
+        }
+      });
+
+      grid.addEventListener("click", async (e) => {
+        if (!e.target.closest("[data-delete]")) return;
+        const card = e.target.closest("[data-id]");
+        if (!confirm("Delete this reference? Checks will no longer recognise this photo.")) return;
+        try {
+          await api("/references/" + card.dataset.id, { method: "DELETE" });
+          status.textContent = "Reference deleted.";
+          load();
+        } catch (err) {
+          status.textContent = err.message;
+        }
+      });
+
+      const addShop = document.getElementById("add-shop");
+      const addOther = document.getElementById("add-other");
+      addShop.addEventListener("change", () => {
+        addOther.hidden = addShop.value !== "";
+        if (!addOther.hidden) addOther.focus();
+      });
+
+      document.getElementById("add").addEventListener("submit", async (e) => {
+        e.preventDefault();
+        const files = [...document.getElementById("add-files").files];
+        const shop = (addShop.value || addOther.value).trim();
+        if (!shop || !files.length) {
+          status.textContent = "Choose a shop and at least one photo.";
+          return;
+        }
+        const button = e.target.querySelector("button");
+        button.disabled = true;
+        let saved = 0;
+        try {
+          // The server takes up to 8 photos per request.
+          for (let i = 0; i < files.length; i += 8) {
+            status.textContent =
+              "Adding photos " + (i + 1) + "–" + Math.min(i + 8, files.length) + " of " + files.length + "…";
+            const form = new FormData();
+            form.append("source_name", shop);
+            for (const f of files.slice(i, i + 8)) form.append("file", f, f.name);
+            saved += (await api("/references", { method: "POST", body: form })).saved;
+          }
+          const skipped = files.length - saved;
+          status.textContent =
+            "Added " +
+            saved +
+            " " +
+            shop +
+            " reference" +
+            (saved === 1 ? "" : "s") +
+            (skipped ? ", " + skipped + " already saved." : ".");
+          e.target.reset();
+          addOther.hidden = true;
+          load();
+        } catch (err) {
+          status.textContent = err.message;
+        }
+        button.disabled = false;
+      });
+
+      load();
+    </script>
+  </body>
+</html>
