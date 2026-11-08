@@ -4,3 +4,4 @@ data/
 refs/
 package-lock.json
 dist-extension/
+eval/

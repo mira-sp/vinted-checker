@@ -41,3 +41,6 @@ refs/
 
 # Packaged browser extension
 dist-extension/
+
+# Evaluation photos and results (personal photos, keep them local)
+eval/

@@ -10,6 +10,8 @@
   "scripts": {
     "dev": "tsx watch src/server.ts",
     "ingest": "tsx src/ingest.ts",
+    "reembed": "tsx src/reembed.ts",
+    "eval": "tsx src/eval.ts",
     "build": "tsc",
     "start": "node dist/server.js",
     "test": "tsx --test \"src/**/*.test.ts\"",
