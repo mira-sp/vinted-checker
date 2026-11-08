@@ -51,7 +51,7 @@ export async function addReference(
 const listAll = db.prepare(
   `SELECT r.*, (SELECT group_concat(model) FROM embeddings e WHERE e.reference_id = r.id) AS models
    FROM reference_images r
-   WHERE (?1 IS NULL OR r.source_name = ?1)
+   WHERE (@shop IS NULL OR r.source_name = @shop)
    ORDER BY r.id DESC`,
 );
 const shopCounts = db.prepare(
@@ -59,7 +59,7 @@ const shopCounts = db.prepare(
 );
 
 export function listReferences(shop: string | null) {
-  const rows = listAll.all(shop) as (ReferenceRow & { models: string | null })[];
+  const rows = listAll.all({ shop }) as (ReferenceRow & { models: string | null })[];
   return {
     shops: shopCounts.all() as { name: string; count: number }[],
     items: rows.map((r) => ({

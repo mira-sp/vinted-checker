@@ -67,11 +67,14 @@ export async function buildApp({ port, logger = true }: Options) {
     (dir: string) => async (request: FastifyRequest<{ Params: { name: string } }>, reply: FastifyReply) => {
       const { name } = request.params;
       if (!/^[0-9a-f-]{36}\.jpg$/.test(name)) return reply.code(404).send({ error: "Not found." });
+      let photo: Buffer;
       try {
-        return reply.type("image/jpeg").send(await readFile(`${dir}/${name}`));
+        photo = await readFile(`${dir}/${name}`);
       } catch {
         return reply.code(404).send({ error: "Not found." });
       }
+      // Set the type only once the file is read, so a 404 can still be sent as JSON.
+      return reply.type("image/jpeg").send(photo);
     };
   app.get("/uploads/:name", servePhoto(UPLOADS_DIR));
   app.get("/reference-images/:name", servePhoto(REFERENCE_IMAGES_DIR));
