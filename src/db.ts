@@ -4,7 +4,12 @@ import { mkdirSync } from "node:fs";
 /** Where the database and uploads live. Tests point this at a temporary folder. */
 export const DATA_DIR = process.env.DATA_DIR || "data";
 
-mkdirSync(DATA_DIR, { recursive: true });
+/** Photos of checked listings. */
+export const UPLOADS_DIR = `${DATA_DIR}/uploads`;
+/** Photos saved as references. */
+export const REFERENCE_IMAGES_DIR = `${DATA_DIR}/reference`;
+
+for (const dir of [DATA_DIR, UPLOADS_DIR, REFERENCE_IMAGES_DIR]) mkdirSync(dir, { recursive: true });
 
 export const db = new Database(`${DATA_DIR}/checker.db`);
 
@@ -71,6 +76,41 @@ const migrations: ((db: Database.Database) => void)[] = [
   (db) => {
     db.exec("ALTER TABLE listings ADD COLUMN result_json TEXT");
   },
+
+  // 4: several photos per listing, embeddings per model, stored reference
+  // photos (so they can be shown and re-embedded), and a Google Vision cache.
+  (db) => {
+    db.exec(`
+      CREATE TABLE listing_images (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        listing_id INTEGER NOT NULL REFERENCES listings(id) ON DELETE CASCADE,
+        position INTEGER NOT NULL,
+        image_path TEXT NOT NULL
+      );
+      CREATE INDEX idx_listing_images_listing ON listing_images(listing_id);
+      INSERT INTO listing_images (listing_id, position, image_path)
+        SELECT id, 0, image_path FROM listings WHERE image_path IS NOT NULL;
+
+      -- One vector per reference and model, so models can be compared and switched.
+      CREATE TABLE embeddings (
+        reference_id INTEGER NOT NULL REFERENCES reference_images(id) ON DELETE CASCADE,
+        model TEXT NOT NULL,
+        vector BLOB NOT NULL,
+        PRIMARY KEY (reference_id, model)
+      );
+      INSERT INTO embeddings (reference_id, model, vector)
+        SELECT id, 'clip', embedding FROM reference_images WHERE embedding IS NOT NULL;
+      ALTER TABLE reference_images DROP COLUMN embedding;
+      ALTER TABLE reference_images ADD COLUMN image_path TEXT;
+
+      -- Google Vision web detection results, keyed by the image's perceptual hash.
+      CREATE TABLE vision_cache (
+        phash TEXT PRIMARY KEY,
+        response_json TEXT NOT NULL,
+        created_at TEXT DEFAULT CURRENT_TIMESTAMP
+      );
+    `);
+  },
 ];
 
 const current = db.pragma("user_version", { simple: true }) as number;
@@ -79,14 +119,4 @@ for (let v = current; v < migrations.length; v++) {
     migrations[v]!(db);
     db.pragma(`user_version = ${v + 1}`);
   })();
-}
-
-/** Inserts a reference image. Returns false if this shop already has the same image. */
-const insertReference = db.prepare(
-  `INSERT OR IGNORE INTO reference_images (source_name, source_url, phash, embedding)
-   VALUES (?, ?, ?, ?)`,
-);
-
-export function saveReference(sourceName: string, sourceUrl: string | null, phash: string, embedding: Buffer): boolean {
-  return insertReference.run(sourceName, sourceUrl, phash, embedding).changes > 0;
 }

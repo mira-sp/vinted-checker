@@ -59,7 +59,14 @@ function multipart(parts: ({ name: string; value: string } | { name: string; fil
 test("GET /health reports status and settings", async () => {
   const res = await app.inject({ method: "GET", url: "/health" });
   assert.equal(res.statusCode, 200);
-  assert.deepEqual(res.json(), { status: "ok", app: "vinted-checker", webSearch: false, references: 0 });
+  assert.deepEqual(res.json(), {
+    status: "ok",
+    app: "vinted-checker",
+    webSearch: false,
+    model: "clip",
+    references: 0,
+    embedded: { clip: 0, "fashion-siglip": 0 },
+  });
 });
 
 test("POST /listings reads text fields sent after the file", async () => {
@@ -147,18 +154,23 @@ test("GET /uploads rejects names that aren't upload ids", async () => {
 });
 
 test("references added by another process are picked up without a restart", async () => {
-  const before = (await app.inject({ method: "GET", url: "/health" })).json().references;
+  // Uses the fashion-siglip model, so checks (which use clip in tests) still
+  // find no references and never download a model.
+  const embedded = async () => (await app.inject({ method: "GET", url: "/health" })).json().embedded["fashion-siglip"];
+  const before = await embedded();
 
   // A second connection, like `npm run ingest` running next to the server.
   const { default: Database } = await import("better-sqlite3");
   const other = new Database(join(dataDir, "checker.db"));
+  const id = other
+    .prepare("INSERT INTO reference_images (source_name, phash) VALUES (?, ?)")
+    .run("Shein", "01".repeat(32)).lastInsertRowid;
   other
-    .prepare("INSERT INTO reference_images (source_name, phash, embedding) VALUES (?, ?, ?)")
-    .run("Shein", "0".repeat(64), Buffer.alloc(512 * 4));
+    .prepare("INSERT INTO embeddings (reference_id, model, vector) VALUES (?, ?, ?)")
+    .run(id, "fashion-siglip", Buffer.alloc(768 * 4));
   other.close();
 
-  const afterInsert = (await app.inject({ method: "GET", url: "/health" })).json().references;
-  assert.equal(afterInsert, before + 1);
+  assert.equal(await embedded(), before + 1);
 });
 
 test("POST requests from browser extensions are allowed", async () => {

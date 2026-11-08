@@ -6,9 +6,8 @@
 import "dotenv/config";
 import { readdir, readFile } from "node:fs/promises";
 import { extname, join } from "node:path";
-import { saveReference } from "./db.js";
-import { embedImage, vectorToBlob } from "./embeddings.js";
-import { hashImage, normalize } from "./matching.js";
+import { normalize } from "./images.js";
+import { addReference } from "./references.js";
 
 const [folder, sourceName] = process.argv.slice(2);
 if (!folder || !sourceName) {
@@ -40,9 +39,8 @@ let failed = 0;
 for (const [i, file] of files.entries()) {
   try {
     const buffer = await normalize(await readFile(join(folder, file)));
-    const hash = await hashImage(buffer);
-    const embedding = vectorToBlob(await embedImage(buffer));
-    if (saveReference(sourceName, sourceUrls.get(file) ?? null, hash, embedding)) added++;
+    const { status } = await addReference(buffer, sourceName, sourceUrls.get(file) ?? null);
+    if (status === "reference_saved") added++;
     else duplicates++;
   } catch (err) {
     failed++;

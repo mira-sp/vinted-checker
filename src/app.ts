@@ -1,12 +1,16 @@
 import Fastify, { type FastifyReply, type FastifyRequest } from "fastify";
 import multipart from "@fastify/multipart";
-import { mkdir, readFile, writeFile } from "node:fs/promises";
+import fastifyStatic from "@fastify/static";
+import { readFile, unlink, writeFile } from "node:fs/promises";
 import { randomUUID } from "node:crypto";
-import { DATA_DIR, db, saveReference } from "./db.js";
-import { checkImage, hashImage, normalize, webSearchEnabled, type CheckResult, type Match } from "./matching.js";
-import { embedImage, invalidateReferences, referenceCount, vectorToBlob } from "./embeddings.js";
+import { resolve } from "node:path";
+import { REFERENCE_IMAGES_DIR, UPLOADS_DIR, db } from "./db.js";
+import { checkImages, normalize, webSearchEnabled, type CheckResult } from "./matching.js";
+import { MODELS, activeModel, embeddedCount, isModelName } from "./embeddings.js";
+import { addReference, deleteReference, listReferences, updateReference } from "./references.js";
 
-const UPLOADS_DIR = `${DATA_DIR}/uploads`;
+/** Most photos a single check accepts (Vinted allows up to 20, most listings have 3-8). */
+export const MAX_PHOTOS = 8;
 
 type Options = {
   /** Port the server will listen on; used to decide which Origin headers are our own page. */
@@ -14,15 +18,19 @@ type Options = {
   logger?: boolean;
 };
 
-type ListingRow = { id: number; image_path: string | null; [k: string]: unknown };
-type Upload = { buffer: Buffer; fields: Record<string, string> };
+type ListingRow = { id: number; image_path: string | null; result_json?: string | null; [k: string]: unknown };
+type Upload = { buffers: Buffer[]; fields: Record<string, string> };
+
+const fileName = (path: string) => path.split("/").pop()!;
+const uploadUrl = (path: string) => `/uploads/${fileName(path)}`;
 
 /** Builds the Fastify app with all routes, without starting it. Tests use `app.inject()`. */
 export async function buildApp({ port, logger = true }: Options) {
   const app = Fastify({ logger });
 
-  await mkdir(UPLOADS_DIR, { recursive: true });
-  await app.register(multipart, { limits: { fileSize: 10 * 1024 * 1024, files: 1 } });
+  await app.register(multipart, { limits: { fileSize: 10 * 1024 * 1024, files: MAX_PHOTOS } });
+  // The pages: / (check), /history.html, /references.html, plus shared CSS and JS.
+  await app.register(fastifyStatic, { root: resolve("public") });
 
   /**
    * The server only listens on 127.0.0.1, but any website open in your browser
@@ -40,42 +48,59 @@ export async function buildApp({ port, logger = true }: Options) {
     }
   });
 
-  app.get("/health", async () => ({
-    status: "ok",
-    app: "vinted-checker",
-    webSearch: webSearchEnabled(),
-    references: referenceCount(),
-  }));
-
-  // The paste page. Read on each request so edits show up on refresh.
-  app.get("/", async (_request, reply) => {
-    const html = await readFile("public/index.html", "utf8");
-    return reply.type("text/html; charset=utf-8").send(html);
+  app.get("/health", async () => {
+    const model = activeModel();
+    const total = (db.prepare("SELECT COUNT(*) AS n FROM reference_images").get() as { n: number }).n;
+    return {
+      status: "ok",
+      app: "vinted-checker",
+      webSearch: webSearchEnabled(),
+      model,
+      references: total,
+      /** References with an embedding, per model. Fewer than `references` means `npm run reembed` is needed. */
+      embedded: Object.fromEntries(Object.keys(MODELS).map((m) => [m, isModelName(m) ? embeddedCount(m) : 0])),
+    };
   });
 
-  // Saved uploads. Names are always <uuid>.jpg, which also rules out path tricks.
-  app.get<{ Params: { name: string } }>("/uploads/:name", async (request, reply) => {
-    const { name } = request.params;
-    if (!/^[0-9a-f-]{36}\.jpg$/.test(name)) return reply.code(404).send({ error: "Not found." });
-    try {
-      return reply.type("image/jpeg").send(await readFile(`${UPLOADS_DIR}/${name}`));
-    } catch {
-      return reply.code(404).send({ error: "Not found." });
-    }
-  });
+  // Stored photos. Names are always <uuid>.jpg, which also rules out path tricks.
+  const servePhoto =
+    (dir: string) => async (request: FastifyRequest<{ Params: { name: string } }>, reply: FastifyReply) => {
+      const { name } = request.params;
+      if (!/^[0-9a-f-]{36}\.jpg$/.test(name)) return reply.code(404).send({ error: "Not found." });
+      try {
+        return reply.type("image/jpeg").send(await readFile(`${dir}/${name}`));
+      } catch {
+        return reply.code(404).send({ error: "Not found." });
+      }
+    };
+  app.get("/uploads/:name", servePhoto(UPLOADS_DIR));
+  app.get("/reference-images/:name", servePhoto(REFERENCE_IMAGES_DIR));
 
-  const listListings = db.prepare("SELECT * FROM listings ORDER BY id DESC LIMIT ? OFFSET ?");
+  // --- Listings (checked photos) ---
+
+  const listListings = db.prepare(
+    `SELECT l.id, l.url, l.title, l.price, l.image_path, l.created_at,
+            json_extract(l.result_json, '$.verdict') AS verdict,
+            (SELECT COUNT(*) FROM listing_images i WHERE i.listing_id = l.id) AS image_count
+     FROM listings l ORDER BY l.id DESC LIMIT ? OFFSET ?`,
+  );
   const countListings = db.prepare("SELECT COUNT(*) AS n FROM listings");
   const getListing = db.prepare("SELECT * FROM listings WHERE id = ?");
+  const imagesFor = db.prepare("SELECT image_path FROM listing_images WHERE listing_id = ? ORDER BY position");
   const matchesFor = db.prepare(
     "SELECT source_name, source_url, similarity, method FROM matches WHERE listing_id = ? ORDER BY id",
   );
   const insertListing = db.prepare(
     "INSERT INTO listings (url, title, price, image_path, result_json) VALUES (?, ?, ?, ?, ?)",
   );
+  const insertImage = db.prepare("INSERT INTO listing_images (listing_id, position, image_path) VALUES (?, ?, ?)");
   const insertMatch = db.prepare(
     "INSERT INTO matches (listing_id, source_name, source_url, similarity, method) VALUES (?, ?, ?, ?, ?)",
   );
+  const deleteMatches = db.prepare("DELETE FROM matches WHERE listing_id = ?");
+  const deleteListingRow = db.prepare("DELETE FROM listings WHERE id = ?");
+
+  const photoPaths = (id: number) => (imagesFor.all(id) as { image_path: string }[]).map((r) => r.image_path);
 
   app.get<{ Querystring: { limit?: string; offset?: string } }>("/listings", async (request) => {
     const limit = Math.min(Math.max(Number(request.query.limit) || 50, 1), 200);
@@ -85,126 +110,189 @@ export async function buildApp({ port, logger = true }: Options) {
       total: (countListings.get() as { n: number }).n,
       limit,
       offset,
-      items: rows.map(({ result_json: _, ...r }) => ({ ...r, matches: matchesFor.all(r.id) })),
+      items: rows.map((r) => ({
+        ...r,
+        imageUrl: r.image_path ? uploadUrl(r.image_path) : null,
+        matches: matchesFor.all(r.id),
+      })),
     };
   });
 
-  /** Upload path on disk → URL the page can load. */
-  const imageUrlFor = (path: string | null) => (path ? `/uploads/${path.split("/").pop()}` : null);
-
-  // One listing with its full check result (null if it was saved without checking).
+  // One listing with its photos and full saved check result (null if it was saved without checking).
   app.get<{ Params: { id: string } }>("/listings/:id", async (request, reply) => {
     const row = getListing.get(Number(request.params.id)) as ListingRow | undefined;
     if (!row) return reply.code(404).send({ error: "Listing not found." });
     const { result_json, ...listing } = row;
+    const imageUrls = photoPaths(row.id).map(uploadUrl);
     return {
       ...listing,
-      imageUrl: imageUrlFor(listing.image_path),
+      imageUrl: imageUrls[0] ?? null,
+      imageUrls,
       matches: matchesFor.all(row.id),
       result: typeof result_json === "string" ? JSON.parse(result_json) : null,
     };
   });
 
+  app.delete<{ Params: { id: string } }>("/listings/:id", async (request, reply) => {
+    const id = Number(request.params.id);
+    if (!getListing.get(id)) return reply.code(404).send({ error: "Listing not found." });
+    const paths = photoPaths(id);
+    db.transaction(() => {
+      deleteMatches.run(id);
+      deleteListingRow.run(id); // listing_images go with it (ON DELETE CASCADE)
+    })();
+    await Promise.all(paths.map((p) => unlink(p).catch(() => {})));
+    return { status: "deleted" };
+  });
+
   /**
-   * Reads a multipart upload: one image (field `file`) plus any text fields, in
-   * any order. Sends a 400 and returns null when there is no usable image.
+   * Reads a multipart upload: up to MAX_PHOTOS images (field `file`, repeatable)
+   * plus any text fields, in any order. Sends a 400 and returns null when there
+   * is no usable image.
    */
   async function readUpload(request: FastifyRequest, reply: FastifyReply): Promise<Upload | null> {
     const fields: Record<string, string> = {};
-    let raw: Buffer | null = null;
-    for await (const part of request.parts()) {
-      if (part.type === "file") {
-        if (!part.mimetype.startsWith("image/")) {
-          await part.toBuffer(); // drain the stream before replying
-          reply.code(400).send({ error: "Only image uploads are supported." });
-          return null;
+    const raws: Buffer[] = [];
+    try {
+      for await (const part of request.parts()) {
+        if (part.type === "file") {
+          const raw = await part.toBuffer();
+          if (!part.mimetype.startsWith("image/")) {
+            reply.code(400).send({ error: "Only image uploads are supported." });
+            return null;
+          }
+          raws.push(raw);
+        } else if (typeof part.value === "string") {
+          fields[part.fieldname] = part.value;
         }
-        raw = await part.toBuffer();
-      } else if (typeof part.value === "string") {
-        fields[part.fieldname] = part.value;
       }
+    } catch (err) {
+      if ((err as { code?: string }).code === "FST_FILES_LIMIT") {
+        reply.code(400).send({ error: `Please upload at most ${MAX_PHOTOS} photos at once.` });
+        return null;
+      }
+      throw err;
     }
-    if (!raw) {
+    if (!raws.length) {
       reply.code(400).send({ error: "Please upload an image." });
       return null;
     }
     try {
-      return { buffer: await normalize(raw), fields };
+      return { buffers: await Promise.all(raws.map(normalize)), fields };
     } catch {
       reply.code(400).send({ error: "That file could not be read as an image." });
       return null;
     }
   }
 
-  /** Saves the image, optional url/title/price and check result. Returns the listing id. */
+  /** Saves the photos, optional url/title/price and check result. Returns the listing id. */
   async function saveListing(upload: Upload, result?: CheckResult) {
-    const name = `${randomUUID()}.jpg`;
-    const path = `${UPLOADS_DIR}/${name}`;
-    await writeFile(path, upload.buffer);
+    const paths = upload.buffers.map(() => `${UPLOADS_DIR}/${randomUUID()}.jpg`);
+    await Promise.all(paths.map((p, i) => writeFile(p, upload.buffers[i]!)));
     const { url, title, price } = upload.fields;
-    const matches: Match[] = result?.matches ?? [];
     const id = db.transaction(() => {
       const listingId = Number(
         insertListing.run(
           url || null,
           title || null,
           price ? Number(price) || null : null,
-          path,
+          paths[0],
           result ? JSON.stringify(result) : null,
         ).lastInsertRowid,
       );
-      for (const m of matches) insertMatch.run(listingId, m.sourceName, m.sourceUrl, m.similarity, m.method);
+      paths.forEach((p, i) => insertImage.run(listingId, i, p));
+      for (const m of result?.matches ?? []) {
+        insertMatch.run(listingId, m.sourceName, m.sourceUrl, m.similarity, m.method);
+      }
       return listingId;
     })();
-    return { id, imageUrl: `/uploads/${name}` };
+    const imageUrls = paths.map(uploadUrl);
+    return { id, imageUrl: imageUrls[0]!, imageUrls };
   }
 
-  // Save an image (optional fields: url, title, price) without checking it.
+  // Save photos (optional fields: url, title, price) without checking them.
   app.post("/listings", async (request, reply) => {
     const upload = await readUpload(request, reply);
     if (!upload) return;
     return reply.code(201).send(await saveListing(upload));
   });
 
-  // Check an image (optional fields: url, title, price): match it, then save it with its matches.
+  // Check one or more photos of a listing (optional fields: url, title, price), then save it.
   app.post("/check", async (request, reply) => {
     const upload = await readUpload(request, reply);
     if (!upload) return;
-    const result = await checkImage(upload.buffer, request.log);
+    const result = await checkImages(upload.buffers, request.log);
     return { ...(await saveListing(upload, result)), ...result };
   });
 
-  async function addReference(buffer: Buffer, sourceName: string, sourceUrl: string | null) {
-    const hash = await hashImage(buffer);
-    const embedding = vectorToBlob(await embedImage(buffer));
-    const added = saveReference(sourceName, sourceUrl, hash, embedding);
-    if (added) invalidateReferences();
-    return { status: added ? "reference_saved" : "already_saved", sourceName };
-  }
+  // Save a checked listing's photos as references, so future checks recognise the item.
+  app.post<{ Params: { id: string }; Body: { source_name?: string; source_url?: string } }>(
+    "/listings/:id/reference",
+    async (request, reply) => {
+      const id = Number(request.params.id);
+      if (!getListing.get(id)) return reply.code(404).send({ error: "Listing not found." });
+      const sourceName = request.body?.source_name?.trim();
+      if (!sourceName) return reply.code(400).send({ error: "source_name is required." });
+      let saved = 0;
+      let already = 0;
+      for (const path of photoPaths(id)) {
+        const r = await addReference(await readFile(path), sourceName, request.body.source_url || null);
+        if (r.status === "reference_saved") saved++;
+        else already++;
+      }
+      return reply.code(saved ? 201 : 200).send({
+        status: saved ? "reference_saved" : "already_saved",
+        sourceName,
+        saved,
+        alreadySaved: already,
+      });
+    },
+  );
 
-  // Teach the app an image you know is from a shop (multipart: file + source_name [+ source_url]).
+  // --- References (photos known to come from a shop) ---
+
+  app.get<{ Querystring: { shop?: string } }>("/references", async (request) => {
+    return listReferences(request.query.shop || null);
+  });
+
+  // Teach the app a photo you know is from a shop (multipart: file + source_name [+ source_url]).
   app.post("/references", async (request, reply) => {
     const upload = await readUpload(request, reply);
     if (!upload) return;
     const sourceName = upload.fields.source_name?.trim();
     if (!sourceName) return reply.code(400).send({ error: "source_name is required." });
-    const result = await addReference(upload.buffer, sourceName, upload.fields.source_url || null);
-    return reply.code(result.status === "reference_saved" ? 201 : 200).send(result);
+    let saved = 0;
+    for (const buffer of upload.buffers) {
+      const r = await addReference(buffer, sourceName, upload.fields.source_url || null);
+      if (r.status === "reference_saved") saved++;
+    }
+    return reply
+      .code(saved ? 201 : 200)
+      .send({ status: saved ? "reference_saved" : "already_saved", sourceName, saved });
   });
 
-  // Confirm a checked listing as coming from a shop, so future checks recognise it.
-  app.post<{ Params: { id: string }; Body: { source_name?: string; source_url?: string } }>(
-    "/listings/:id/reference",
+  app.patch<{ Params: { id: string }; Body: { source_name?: string; source_url?: string | null } }>(
+    "/references/:id",
     async (request, reply) => {
-      const listing = getListing.get(Number(request.params.id)) as ListingRow | undefined;
-      if (!listing?.image_path) return reply.code(404).send({ error: "Listing not found." });
       const sourceName = request.body?.source_name?.trim();
-      if (!sourceName) return reply.code(400).send({ error: "source_name is required." });
-      const buffer = await readFile(listing.image_path);
-      const result = await addReference(buffer, sourceName, request.body.source_url || null);
-      return reply.code(result.status === "reference_saved" ? 201 : 200).send(result);
+      if (request.body?.source_name !== undefined && !sourceName) {
+        return reply.code(400).send({ error: "source_name can't be empty." });
+      }
+      const sourceUrl = request.body?.source_url === undefined ? undefined : request.body.source_url?.trim() || null;
+      const result = updateReference(Number(request.params.id), { sourceName, sourceUrl });
+      if (result === "not_found") return reply.code(404).send({ error: "Reference not found." });
+      if (result === "conflict") {
+        return reply.code(409).send({ error: `This photo is already saved as a ${sourceName} reference.` });
+      }
+      return { status: "updated" };
     },
   );
+
+  app.delete<{ Params: { id: string } }>("/references/:id", async (request, reply) => {
+    const deleted = await deleteReference(Number(request.params.id));
+    if (!deleted) return reply.code(404).send({ error: "Reference not found." });
+    return { status: "deleted" };
+  });
 
   return app;
 }

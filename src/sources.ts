@@ -11,6 +11,8 @@ export type Match = {
    */
   similarity: number | null;
   method: Method;
+  /** Which of the checked photos (0-based) this match came from. */
+  image?: number;
 };
 
 export type Verdict = "likely_fast_fashion" | "possible_fast_fashion" | "no_match_found";
